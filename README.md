@@ -2,7 +2,7 @@
 
 ## 当前阶段
 
-阶段 3：公共模块与基础配置。
+阶段 4：用户服务。
 
 本阶段包含：
 
@@ -31,8 +31,17 @@
 - `RabbitMqConstants`
 - `MyBatisPlusConfig`
 - `Knife4jConfig`
+- `JwtUtils`
 
-未实现用户注册、登录、JWT、商品 CRUD、订单、优惠券等业务功能，也未创建业务表，未编写 Redis、RabbitMQ、Elasticsearch、MinIO 业务代码。
+`youxuan-user-service` 已实现：
+
+- 用户注册
+- 用户登录
+- 查询当前用户信息
+- BCrypt 密码加密
+- 登录成功返回包含 `userId`、`username`、`role` 的 JWT
+
+未实现 Gateway 登录校验，未实现商品 CRUD、订单、优惠券、购物车、地址等后续业务。
 
 ## 版本
 
@@ -42,11 +51,13 @@
 - Spring Cloud Alibaba 2023.0.1.0
 - MyBatis-Plus 3.5.7
 - Knife4j 4.5.0
+- JJWT 0.12.5
+- MySQL Connector/J
 
-## 启动 Nacos
+## 启动 MySQL 和 Nacos
 
 ```powershell
-docker compose -f docker/docker-compose.yml up -d nacos
+docker compose -f docker/docker-compose.yml up -d mysql nacos
 ```
 
 Nacos 控制台：
@@ -89,70 +100,50 @@ mvn -pl youxuan-gateway -am spring-boot:run
 
 ## 测试
 
-直连 user-service：
+注册用户：
 
 ```powershell
-Invoke-RestMethod http://localhost:9010/test/ping
+$body = @{
+  username = "testuser"
+  password = "123456"
+  nickname = "测试用户"
+  phone = "13800138000"
+} | ConvertTo-Json
+
+Invoke-RestMethod -Method Post -Uri http://localhost:9000/api/user/register -ContentType "application/json" -Body $body
 ```
 
-直连 product-service：
+登录用户：
 
 ```powershell
-Invoke-RestMethod http://localhost:9020/test/ping
+$body = @{
+  username = "testuser"
+  password = "123456"
+} | ConvertTo-Json
+
+Invoke-RestMethod -Method Post -Uri http://localhost:9000/api/user/login -ContentType "application/json" -Body $body
 ```
 
-直连 order-service：
+查询当前用户：
 
 ```powershell
-Invoke-RestMethod http://localhost:9050/test/ping
+Invoke-RestMethod -Method Get -Uri http://localhost:9000/api/user/me -Headers @{ "X-User-Id" = "1" }
 ```
 
-通过 gateway 访问 user-service：
+服务连通性：
 
 ```powershell
 Invoke-RestMethod http://localhost:9000/api/user/test/ping
 ```
 
-通过 gateway 访问 product-service：
+注册或查询成功预期返回统一 Result：
 
-```powershell
-Invoke-RestMethod http://localhost:9000/api/product/test/ping
-```
-
-测试 product-service 业务异常统一返回：
-
-```powershell
-Invoke-RestMethod http://localhost:9020/test/error
-```
-
-测试 gateway 转发后的业务异常统一返回：
-
-```powershell
-Invoke-RestMethod http://localhost:9000/api/product/test/error
-```
-
-通过 gateway 访问 order-service：
-
-```powershell
-Invoke-RestMethod http://localhost:9000/api/order/test/ping
-```
-
-预期返回：
-
-```json
-{
-  "code": 200,
-  "message": "success",
-  "data": "pong"
-}
-```
-
-异常测试预期返回：
+重复注册预期返回业务异常：
 
 ```json
 {
   "code": 5000,
-  "message": "测试业务异常",
+  "message": "用户名已存在",
   "data": null
 }
 ```
