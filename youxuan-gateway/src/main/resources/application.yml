@@ -58,3 +58,14 @@ spring:
             - Path=/api/home/**
           filters:
             - StripPrefix=2
+
+youxuan:
+  jwt:
+    secret: ${YOUXUAN_JWT_SECRET:youxuan-mall-dev-secret-key-for-stage-four-2026}
+    expire-seconds: 86400
+  gateway:
+    auth:
+      white-list:
+        - "POST:/api/user/register"
+        - "POST:/api/user/login"
+        - "GET:/api/*/test/ping"

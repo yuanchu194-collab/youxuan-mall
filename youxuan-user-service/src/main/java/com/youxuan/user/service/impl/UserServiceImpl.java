@@ -76,12 +76,12 @@ public class UserServiceImpl implements UserService {
     }
 
     /**
-     * 当前阶段先根据 X-User-Id 查询用户；网关解析 token 并透传留到阶段 5。
+     * 根据 UserContext 中的用户 ID 查询当前用户信息。
      */
     @Override
     public UserVO getCurrentUser(Long userId) {
         if (userId == null) {
-            throw new BusinessException(ErrorCode.UNAUTHORIZED, "缺少请求头 X-User-Id");
+            throw new BusinessException(ErrorCode.UNAUTHORIZED, "用户未登录");
         }
         SysUser user = sysUserMapper.selectById(userId);
         if (user == null) {

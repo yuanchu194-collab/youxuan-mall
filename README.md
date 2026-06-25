@@ -2,7 +2,7 @@
 
 ## 当前阶段
 
-阶段 4：用户服务。
+阶段 5：Gateway 登录校验与用户透传。
 
 本阶段包含：
 
@@ -41,7 +41,16 @@
 - BCrypt 密码加密
 - 登录成功返回包含 `userId`、`username`、`role` 的 JWT
 
-未实现 Gateway 登录校验，未实现商品 CRUD、订单、优惠券、购物车、地址等后续业务。
+`youxuan-gateway` 已实现：
+
+- 白名单接口放行
+- 非白名单接口校验 `Authorization: Bearer token`
+- 解析 JWT 中的 `userId`、`username`、`role`
+- 向下游透传 `X-User-Id`、`X-User-Role`
+
+下游服务已通过公共拦截器读取请求头并写入 `UserContext`，请求结束后清理上下文。
+
+未实现商品 CRUD、订单、优惠券、购物车、地址等后续业务，也未实现 ADMIN 接口权限控制。
 
 ## 版本
 
@@ -127,13 +136,33 @@ Invoke-RestMethod -Method Post -Uri http://localhost:9000/api/user/login -Conten
 查询当前用户：
 
 ```powershell
-Invoke-RestMethod -Method Get -Uri http://localhost:9000/api/user/me -Headers @{ "X-User-Id" = "1" }
+$loginBody = @{
+  username = "testuser"
+  password = "123456"
+} | ConvertTo-Json
+
+$login = Invoke-RestMethod -Method Post -Uri http://localhost:9000/api/user/login -ContentType "application/json" -Body $loginBody
+$token = $login.data.token
+
+Invoke-RestMethod -Method Get -Uri http://localhost:9000/api/user/me -Headers @{ Authorization = "Bearer $token" }
 ```
 
 服务连通性：
 
 ```powershell
 Invoke-RestMethod http://localhost:9000/api/user/test/ping
+```
+
+无 token 访问受保护接口：
+
+```powershell
+Invoke-RestMethod -Method Get -Uri http://localhost:9000/api/user/me
+```
+
+透传验证：
+
+```powershell
+Invoke-RestMethod -Method Get -Uri http://localhost:9000/api/user/test/context -Headers @{ Authorization = "Bearer $token" }
 ```
 
 注册或查询成功预期返回统一 Result：

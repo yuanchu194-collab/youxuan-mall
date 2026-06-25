@@ -1,5 +1,6 @@
 package com.youxuan.user.controller;
 
+import com.youxuan.common.context.UserContext;
 import com.youxuan.common.result.Result;
 import com.youxuan.user.dto.UserLoginDTO;
 import com.youxuan.user.dto.UserRegisterDTO;
@@ -10,7 +11,6 @@ import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
@@ -42,10 +42,10 @@ public class UserController {
     }
 
     /**
-     * 查询当前用户。本阶段先读取 X-User-Id，请求头由测试方手动传入。
+     * 查询当前用户，用户 ID 来自下游拦截器写入的 UserContext。
      */
     @GetMapping("/me")
-    public Result<UserVO> me(@RequestHeader(value = "X-User-Id", required = false) Long userId) {
-        return Result.success(userService.getCurrentUser(userId));
+    public Result<UserVO> me() {
+        return Result.success(userService.getCurrentUser(UserContext.getUserId()));
     }
 }
