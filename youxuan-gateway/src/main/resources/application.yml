@@ -1,0 +1,18 @@
+server:
+  port: 9000
+
+spring:
+  application:
+    name: youxuan-gateway
+  cloud:
+    nacos:
+      discovery:
+        server-addr: localhost:8848
+    gateway:
+      routes:
+        - id: youxuan-user-service
+          uri: lb://youxuan-user-service
+          predicates:
+            - Path=/api/user/**
+          filters:
+            - StripPrefix=2
