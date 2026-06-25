@@ -16,6 +16,13 @@
         <module>youxuan-common</module>
         <module>youxuan-gateway</module>
         <module>youxuan-user-service</module>
+        <module>youxuan-product-service</module>
+        <module>youxuan-search-service</module>
+        <module>youxuan-coupon-service</module>
+        <module>youxuan-order-service</module>
+        <module>youxuan-file-service</module>
+        <module>youxuan-cart-service</module>
+        <module>youxuan-home-service</module>
     </modules>
 
     <properties>

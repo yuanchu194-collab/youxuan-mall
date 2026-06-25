@@ -1,0 +1,10 @@
+server:
+  port: 9050
+
+spring:
+  application:
+    name: youxuan-order-service
+  cloud:
+    nacos:
+      discovery:
+        server-addr: localhost:8848

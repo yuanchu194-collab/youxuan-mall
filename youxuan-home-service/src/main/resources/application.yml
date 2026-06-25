@@ -1,0 +1,10 @@
+server:
+  port: 9080
+
+spring:
+  application:
+    name: youxuan-home-service
+  cloud:
+    nacos:
+      discovery:
+        server-addr: localhost:8848

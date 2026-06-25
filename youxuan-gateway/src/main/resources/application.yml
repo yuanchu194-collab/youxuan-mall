@@ -16,3 +16,45 @@ spring:
             - Path=/api/user/**
           filters:
             - StripPrefix=2
+        - id: youxuan-product-service
+          uri: lb://youxuan-product-service
+          predicates:
+            - Path=/api/product/**
+          filters:
+            - StripPrefix=2
+        - id: youxuan-search-service
+          uri: lb://youxuan-search-service
+          predicates:
+            - Path=/api/search/**
+          filters:
+            - StripPrefix=2
+        - id: youxuan-coupon-service
+          uri: lb://youxuan-coupon-service
+          predicates:
+            - Path=/api/coupon/**
+          filters:
+            - StripPrefix=2
+        - id: youxuan-order-service
+          uri: lb://youxuan-order-service
+          predicates:
+            - Path=/api/order/**
+          filters:
+            - StripPrefix=2
+        - id: youxuan-file-service
+          uri: lb://youxuan-file-service
+          predicates:
+            - Path=/api/file/**
+          filters:
+            - StripPrefix=2
+        - id: youxuan-cart-service
+          uri: lb://youxuan-cart-service
+          predicates:
+            - Path=/api/cart/**
+          filters:
+            - StripPrefix=2
+        - id: youxuan-home-service
+          uri: lb://youxuan-home-service
+          predicates:
+            - Path=/api/home/**
+          filters:
+            - StripPrefix=2

@@ -1,0 +1,10 @@
+server:
+  port: 9070
+
+spring:
+  application:
+    name: youxuan-cart-service
+  cloud:
+    nacos:
+      discovery:
+        server-addr: localhost:8848

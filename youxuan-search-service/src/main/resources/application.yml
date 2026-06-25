@@ -1,0 +1,10 @@
+server:
+  port: 9030
+
+spring:
+  application:
+    name: youxuan-search-service
+  cloud:
+    nacos:
+      discovery:
+        server-addr: localhost:8848
