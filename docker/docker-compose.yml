@@ -1,0 +1,123 @@
+﻿version: "3.8"
+
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: youxuan-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: youxuan_mall
+      TZ: Asia/Shanghai
+    ports:
+      - "3307:3306"
+    volumes:
+      - youxuan-mysql-data:/var/lib/mysql
+      - ./mysql/init:/docker-entrypoint-initdb.d
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+    networks:
+      - youxuan-mall-net
+
+  redis:
+    image: redis:7.2-alpine
+    container_name: youxuan-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - youxuan-redis-data:/data
+    command: redis-server --appendonly yes
+    networks:
+      - youxuan-mall-net
+
+  rabbitmq:
+    image: rabbitmq:3-management
+    container_name: youxuan-rabbitmq
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+      TZ: Asia/Shanghai
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    volumes:
+      - youxuan-rabbitmq-data:/var/lib/rabbitmq
+    networks:
+      - youxuan-mall-net
+
+  nacos:
+    image: nacos/nacos-server:v2.2.3
+    container_name: youxuan-nacos
+    restart: unless-stopped
+    environment:
+      MODE: standalone
+      TZ: Asia/Shanghai
+    ports:
+      - "8848:8848"
+      - "9848:9848"
+      - "9849:9849"
+    networks:
+      - youxuan-mall-net
+
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:7.17.18
+    container_name: youxuan-elasticsearch
+    restart: unless-stopped
+    environment:
+      discovery.type: single-node
+      xpack.security.enabled: "false"
+      ES_JAVA_OPTS: "-Xms512m -Xmx512m"
+      TZ: Asia/Shanghai
+    ports:
+      - "9200:9200"
+    volumes:
+      - youxuan-es-data:/usr/share/elasticsearch/data
+    networks:
+      - youxuan-mall-net
+
+  minio:
+    image: minio/minio:RELEASE.2024-01-28T22-35-53Z
+    container_name: youxuan-minio
+    restart: unless-stopped
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+      TZ: Asia/Shanghai
+    command: server /data --console-address ":9001"
+    ports:
+      - "9100:9000"
+      - "9101:9001"
+    volumes:
+      - youxuan-minio-data:/data
+    networks:
+      - youxuan-mall-net
+
+  minio-init:
+    image: minio/mc:latest
+    container_name: youxuan-minio-init
+    depends_on:
+      - minio
+    entrypoint: >
+      /bin/sh -c "
+      sleep 10;
+      mc alias set local http://minio:9000 minioadmin minioadmin;
+      mc mb -p local/youxuan-mall;
+      mc anonymous set download local/youxuan-mall;
+      exit 0;
+      "
+    networks:
+      - youxuan-mall-net
+
+networks:
+  youxuan-mall-net:
+    name: youxuan-mall-net
+
+volumes:
+  youxuan-mysql-data:
+  youxuan-redis-data:
+  youxuan-rabbitmq-data:
+  youxuan-es-data:
+  youxuan-minio-data:
