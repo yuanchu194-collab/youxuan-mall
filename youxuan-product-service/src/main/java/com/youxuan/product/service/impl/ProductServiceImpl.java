@@ -15,6 +15,7 @@ import com.youxuan.product.entity.ProductStock;
 import com.youxuan.product.mapper.ProductCategoryMapper;
 import com.youxuan.product.mapper.ProductMapper;
 import com.youxuan.product.mapper.ProductStockMapper;
+import com.youxuan.product.service.ProductCacheService;
 import com.youxuan.product.service.ProductService;
 import com.youxuan.product.vo.ProductVO;
 import java.util.List;
@@ -34,13 +35,16 @@ public class ProductServiceImpl implements ProductService {
     private final ProductMapper productMapper;
     private final ProductCategoryMapper productCategoryMapper;
     private final ProductStockMapper productStockMapper;
+    private final ProductCacheService productCacheService;
 
     public ProductServiceImpl(ProductMapper productMapper,
                               ProductCategoryMapper productCategoryMapper,
-                              ProductStockMapper productStockMapper) {
+                              ProductStockMapper productStockMapper,
+                              ProductCacheService productCacheService) {
         this.productMapper = productMapper;
         this.productCategoryMapper = productCategoryMapper;
         this.productStockMapper = productStockMapper;
+        this.productCacheService = productCacheService;
     }
 
     /**
@@ -63,7 +67,9 @@ public class ProductServiceImpl implements ProductService {
         stock.setStock(createDTO.getStock());
         stock.setLockedStock(0);
         productStockMapper.insert(stock);
-        return ProductVO.from(productMapper.selectById(product.getId()), category, getStock(product.getId()));
+        ProductVO productVO = ProductVO.from(productMapper.selectById(product.getId()), category, getStock(product.getId()));
+        deleteProductCaches(product.getId(), true);
+        return productVO;
     }
 
     @Override
@@ -78,7 +84,9 @@ public class ProductServiceImpl implements ProductService {
                 updateDTO.getMainImage(), updateDTO.getDetail(), updateDTO.getPrice(), updateDTO.getOriginalPrice(),
                 updateDTO.getSales(), updateDTO.getStatus());
         productMapper.updateById(product);
-        return ProductVO.from(productMapper.selectById(id), category, getStock(id));
+        ProductVO productVO = ProductVO.from(productMapper.selectById(id), category, getStock(id));
+        deleteProductCaches(id, true);
+        return productVO;
     }
 
     @Override
@@ -87,12 +95,26 @@ public class ProductServiceImpl implements ProductService {
         getProduct(id);
         productMapper.deleteById(id);
         productStockMapper.delete(new LambdaQueryWrapper<ProductStock>().eq(ProductStock::getProductId, id));
+        deleteProductCaches(id, true);
     }
 
     @Override
     public ProductVO detail(Long id) {
-        Product product = getProduct(id);
-        return toVO(product);
+        validateProductId(id);
+        ProductVO cachedProduct = productCacheService.getProductDetail(id);
+        if (cachedProduct != null) {
+            return cachedProduct;
+        }
+
+        Product product = productMapper.selectById(id);
+        if (product == null) {
+            // 空值缓存用于拦截不存在商品的重复查询，避免缓存穿透。
+            productCacheService.writeEmptyProductDetail(id);
+            throw new BusinessException(ErrorCode.NOT_FOUND, "商品不存在");
+        }
+        ProductVO productVO = toVO(product);
+        productCacheService.writeProductDetail(id, productVO);
+        return productVO;
     }
 
     @Override
@@ -113,12 +135,14 @@ public class ProductServiceImpl implements ProductService {
     @Transactional(rollbackFor = Exception.class)
     public void up(Long id) {
         updateStatus(id, STATUS_ON);
+        deleteProductCaches(id, true);
     }
 
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void down(Long id) {
         updateStatus(id, STATUS_OFF);
+        deleteProductCaches(id, true);
     }
 
     /**
@@ -137,6 +161,7 @@ public class ProductServiceImpl implements ProductService {
         if (updated == 0) {
             throw new BusinessException(ErrorCode.BUSINESS_ERROR, "商品库存不足");
         }
+        deleteProductCaches(product.getId(), true);
         return toVO(productMapper.selectById(product.getId()));
     }
 
@@ -156,7 +181,28 @@ public class ProductServiceImpl implements ProductService {
         if (updated == 0) {
             throw new BusinessException(ErrorCode.BUSINESS_ERROR, "可恢复库存不足");
         }
+        deleteProductCaches(product.getId(), true);
         return toVO(productMapper.selectById(product.getId()));
+    }
+
+    @Override
+    public List<ProductVO> hotProducts(Integer limit) {
+        int safeLimit = limit == null || limit < 1 ? 10 : Math.min(limit, 50);
+        List<ProductVO> cachedProducts = productCacheService.getHotProducts(safeLimit);
+        if (cachedProducts != null) {
+            return cachedProducts;
+        }
+
+        List<ProductVO> products = productMapper.selectList(new LambdaQueryWrapper<Product>()
+                        .eq(Product::getStatus, STATUS_ON)
+                        .orderByDesc(Product::getSales)
+                        .orderByDesc(Product::getId)
+                        .last("LIMIT " + safeLimit))
+                .stream()
+                .map(this::toVO)
+                .toList();
+        productCacheService.writeHotProducts(safeLimit, products);
+        return products;
     }
 
     private void updateStatus(Long id, int status) {
@@ -167,14 +213,18 @@ public class ProductServiceImpl implements ProductService {
     }
 
     private Product getProduct(Long id) {
-        if (id == null) {
-            throw new BusinessException(ErrorCode.PARAM_ERROR, "商品ID不能为空");
-        }
+        validateProductId(id);
         Product product = productMapper.selectById(id);
         if (product == null) {
             throw new BusinessException(ErrorCode.NOT_FOUND, "商品不存在");
         }
         return product;
+    }
+
+    private void validateProductId(Long id) {
+        if (id == null) {
+            throw new BusinessException(ErrorCode.PARAM_ERROR, "商品ID不能为空");
+        }
     }
 
     private ProductCategory getEnabledCategory(Long categoryId) {
@@ -198,6 +248,13 @@ public class ProductServiceImpl implements ProductService {
         ProductCategory category = productCategoryMapper.selectById(product.getCategoryId());
         ProductStock stock = getStock(product.getId());
         return ProductVO.from(product, category, stock);
+    }
+
+    private void deleteProductCaches(Long productId, boolean includeHotProducts) {
+        productCacheService.deleteProductDetailCache(productId);
+        if (includeHotProducts) {
+            productCacheService.deleteHotProductsCache();
+        }
     }
 
     private void fillProduct(Product product, Long categoryId, String name, String subtitle, String mainImage,

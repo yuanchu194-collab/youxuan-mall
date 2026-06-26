@@ -5,6 +5,7 @@ import com.youxuan.product.dto.ProductCreateDTO;
 import com.youxuan.product.dto.ProductUpdateDTO;
 import com.youxuan.product.dto.StockChangeDTO;
 import com.youxuan.product.vo.ProductVO;
+import java.util.List;
 
 /**
  * 商品服务。
@@ -28,4 +29,6 @@ public interface ProductService {
     ProductVO deductStock(StockChangeDTO stockChangeDTO);
 
     ProductVO restoreStock(StockChangeDTO stockChangeDTO);
+
+    List<ProductVO> hotProducts(Integer limit);
 }

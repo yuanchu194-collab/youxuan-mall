@@ -298,3 +298,94 @@ Invoke-RestMethod -Method Get -Uri http://localhost:9000/api/user/test/context -
   "data": null
 }
 ```
+
+## 阶段 7：Redis 商品缓存
+
+本阶段只在商品服务中增加 Redis 显式缓存控制，不涉及 Elasticsearch、RabbitMQ、MinIO、购物车、订单、优惠券和首页运营服务。
+
+### 启动依赖
+
+```powershell
+docker compose -f docker/docker-compose.yml up -d mysql nacos redis
+```
+
+启动服务：
+
+```powershell
+mvn -pl youxuan-user-service -am spring-boot:run
+mvn -pl youxuan-product-service -am spring-boot:run
+mvn -pl youxuan-gateway -am spring-boot:run
+```
+
+### 登录获取 Token
+
+```powershell
+$loginBody = @{
+  username = "testuser"
+  password = "123456"
+} | ConvertTo-Json
+
+$login = Invoke-RestMethod -Method Post -Uri http://localhost:9000/api/user/login -ContentType "application/json" -Body $loginBody
+$token = $login.data.token
+$headers = @{ Authorization = "Bearer $token" }
+```
+
+### 测试商品详情缓存
+
+第一次查询应打印“商品详情缓存未命中”，第二次查询应打印“商品详情缓存命中”。
+
+```powershell
+$productId = 1
+Invoke-RestMethod -Method Get -Uri "http://localhost:9000/api/product/$productId" -Headers $headers
+Invoke-RestMethod -Method Get -Uri "http://localhost:9000/api/product/$productId" -Headers $headers
+```
+
+不存在商品第一次查询会写入 2 分钟空值缓存，第二次查询应打印“商品详情空值缓存命中”。
+
+```powershell
+Invoke-RestMethod -Method Get -Uri "http://localhost:9000/api/product/99999999" -Headers $headers
+Invoke-RestMethod -Method Get -Uri "http://localhost:9000/api/product/99999999" -Headers $headers
+```
+
+### 测试热门商品缓存
+
+第一次查询应打印“热门商品缓存未命中”，第二次查询应打印“热门商品缓存命中”。
+
+```powershell
+Invoke-RestMethod -Method Get -Uri "http://localhost:9000/api/product/home/hot" -Headers $headers
+Invoke-RestMethod -Method Get -Uri "http://localhost:9000/api/product/home/hot" -Headers $headers
+Invoke-RestMethod -Method Get -Uri "http://localhost:9000/api/product/home/hot?limit=5" -Headers $headers
+```
+
+### 测试缓存删除
+
+修改、上下架、扣减库存、恢复库存后，商品详情缓存会删除，热门商品缓存也会删除。
+
+```powershell
+Invoke-RestMethod -Method Put -Uri "http://localhost:9000/api/product/$productId/down" -Headers $headers
+Invoke-RestMethod -Method Get -Uri "http://localhost:9000/api/product/$productId" -Headers $headers
+
+Invoke-RestMethod -Method Put -Uri "http://localhost:9000/api/product/$productId/up" -Headers $headers
+Invoke-RestMethod -Method Get -Uri "http://localhost:9000/api/product/home/hot" -Headers $headers
+```
+
+### 本地验收记录
+
+验收日期：2026-06-26
+
+已验证内容：
+
+- 商品详情接口第一次查询 Redis 未命中，查询 MySQL 后写入商品详情缓存。
+- 商品详情接口第二次查询命中 Redis，直接返回缓存中的商品详情。
+- 不存在商品会写入 2 分钟空值缓存，重复查询不再反复访问 MySQL。
+- 热门商品接口第一次查询 Redis 未命中，按 `status = 1`、`sales DESC`、`id DESC` 查询 MySQL 后写入缓存。
+- 热门商品接口第二次查询命中 Redis，直接返回缓存列表。
+- 商品上下架、修改、删除、库存扣减、库存恢复后会删除商品详情缓存；涉及展示一致性的场景同时删除热门商品缓存。
+- `mvn -DskipTests package` 已验证通过，结果为 `BUILD SUCCESS`。
+
+已验证的 Redis key：
+
+```text
+youxuan:product:detail:1
+youxuan:home:hot-products
+```

@@ -7,6 +7,7 @@ import com.youxuan.product.dto.ProductUpdateDTO;
 import com.youxuan.product.service.ProductService;
 import com.youxuan.product.vo.ProductVO;
 import jakarta.validation.Valid;
+import java.util.List;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -59,6 +60,11 @@ public class ProductController {
                                               @RequestParam(name = "categoryId", required = false) Long categoryId,
                                               @RequestParam(name = "status", required = false) Integer status) {
         return Result.success(productService.page(pageNum, pageSize, name, categoryId, status));
+    }
+
+    @GetMapping("/home/hot")
+    public Result<List<ProductVO>> hotProducts(@RequestParam(name = "limit", defaultValue = "10") Integer limit) {
+        return Result.success(productService.hotProducts(limit));
     }
 
     @PutMapping("/{id:\\d+}/up")
