@@ -525,3 +525,160 @@ youxuan_product
 - 通过 Gateway 携带 `Authorization: Bearer token` 调用 `POST /api/search/product/importAll` 成功，导入商品数为 `1`。
 - 通过 Gateway 调用 `POST /api/search/product` 搜索关键词 `耳机` 成功，返回 `1` 条商品。
 - 本阶段未实现 RabbitMQ 商品变更自动同步，商品变更后不会自动同步 ES；自动同步属于阶段 9。
+
+## 阶段 9：RabbitMQ 同步商品变更到 ES
+
+本阶段只实现商品变更后的 RabbitMQ 异步同步链路：`youxuan-product-service` 在商品新增、修改、删除、上架、下架后发送消息，`youxuan-search-service` 消费消息后更新或删除 Elasticsearch 文档。不实现 MinIO、购物车、订单、优惠券、首页运营、Canal、Sentinel、Seata 和秒杀。
+
+### 启动依赖
+
+```powershell
+docker compose -f docker/docker-compose.yml up -d mysql nacos redis rabbitmq elasticsearch
+```
+
+检查 RabbitMQ 管理端和 Elasticsearch：
+
+```powershell
+Invoke-RestMethod -Method Get -Uri http://localhost:9200
+
+$pair = [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes("guest:guest"))
+$mqHeaders = @{ Authorization = "Basic $pair" }
+Invoke-RestMethod -Method Get -Uri "http://localhost:15672/api/overview" -Headers $mqHeaders
+```
+
+启动服务：
+
+```powershell
+mvn -pl youxuan-user-service -am spring-boot:run
+mvn -pl youxuan-product-service -am spring-boot:run
+mvn -pl youxuan-search-service -am spring-boot:run
+mvn -pl youxuan-gateway -am spring-boot:run
+```
+
+### 登录获取 Token
+
+```powershell
+$loginBody = @{
+  username = "testuser"
+  password = "123456"
+} | ConvertTo-Json
+
+$login = Invoke-RestMethod -Method Post -Uri http://localhost:9000/api/user/login -ContentType "application/json" -Body $loginBody
+$token = $login.data.token
+$headers = @{ Authorization = "Bearer $token" }
+```
+
+### 检查 RabbitMQ Exchange 和 Queue
+
+```powershell
+$pair = [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes("guest:guest"))
+$mqHeaders = @{ Authorization = "Basic $pair" }
+
+Invoke-RestMethod -Method Get -Uri "http://localhost:15672/api/exchanges/%2F/youxuan.product.exchange" -Headers $mqHeaders
+Invoke-RestMethod -Method Get -Uri "http://localhost:15672/api/queues/%2F/youxuan.product.sync-es.queue" -Headers $mqHeaders
+```
+
+本阶段使用的 RabbitMQ 配置：
+
+```text
+Exchange：youxuan.product.exchange
+Queue：youxuan.product.sync-es.queue
+RoutingKey：product.sync.es
+```
+
+### 测试新增商品自动同步 ES
+
+```powershell
+$productBody = @{
+  categoryId = 1
+  name = "阶段9MQ耳机"
+  subtitle = "RabbitMQ同步ES测试"
+  mainImage = "http://localhost/demo.jpg"
+  detail = "阶段9测试商品"
+  price = 199.00
+  originalPrice = 299.00
+  sales = 9
+  status = 1
+  stock = 20
+} | ConvertTo-Json
+
+$created = Invoke-RestMethod -Method Post -Uri http://localhost:9000/api/product -Headers $headers -ContentType "application/json" -Body $productBody
+$productId = $created.data.id
+Start-Sleep -Seconds 5
+
+$searchBody = @{
+  keyword = "阶段9MQ耳机"
+  pageNum = 1
+  pageSize = 10
+} | ConvertTo-Json
+
+Invoke-RestMethod -Method Post -Uri http://localhost:9000/api/search/product -Headers $headers -ContentType "application/json" -Body $searchBody
+```
+
+### 测试修改、上下架和删除同步
+
+```powershell
+$updateBody = @{
+  categoryId = 1
+  name = "阶段9MQ耳机已修改"
+  subtitle = "RabbitMQ修改同步ES测试"
+  mainImage = "http://localhost/demo2.jpg"
+  detail = "阶段9修改商品"
+  price = 188.00
+  originalPrice = 288.00
+  sales = 19
+  status = 1
+} | ConvertTo-Json
+
+Invoke-RestMethod -Method Put -Uri "http://localhost:9000/api/product/$productId" -Headers $headers -ContentType "application/json" -Body $updateBody
+Start-Sleep -Seconds 5
+
+$searchUpdatedBody = @{
+  keyword = "阶段9MQ耳机已修改"
+  pageNum = 1
+  pageSize = 10
+} | ConvertTo-Json
+
+Invoke-RestMethod -Method Post -Uri http://localhost:9000/api/search/product -Headers $headers -ContentType "application/json" -Body $searchUpdatedBody
+
+Invoke-RestMethod -Method Put -Uri "http://localhost:9000/api/product/$productId/down" -Headers $headers
+Start-Sleep -Seconds 5
+Invoke-RestMethod -Method Post -Uri http://localhost:9000/api/search/product -Headers $headers -ContentType "application/json" -Body $searchUpdatedBody
+
+Invoke-RestMethod -Method Put -Uri "http://localhost:9000/api/product/$productId/up" -Headers $headers
+Start-Sleep -Seconds 5
+Invoke-RestMethod -Method Post -Uri http://localhost:9000/api/search/product -Headers $headers -ContentType "application/json" -Body $searchUpdatedBody
+
+Invoke-RestMethod -Method Delete -Uri "http://localhost:9000/api/product/$productId" -Headers $headers
+Start-Sleep -Seconds 5
+Invoke-RestMethod -Method Post -Uri http://localhost:9000/api/search/product -Headers $headers -ContentType "application/json" -Body $searchUpdatedBody
+```
+
+预期结果：
+
+- 新增商品后，不手动调用 `importAll`，搜索接口能查到新商品。
+- 修改商品名称后，不手动调用 `importAll`，搜索接口能查到新名称。
+- 下架商品后，搜索接口查不到该商品。
+- 上架商品后，搜索接口能重新查到该商品。
+- 删除商品后，ES 中对应文档被删除，搜索接口查不到该商品。
+- product-service 日志包含“商品同步 ES 消息发送成功”。
+- search-service 日志包含“收到商品同步 ES 消息”和“商品 ES 文档保存成功 / 删除成功”。
+
+### 本地验收记录
+
+验收日期：2026-06-26
+
+已验证内容：
+
+- `mvn -DskipTests package` 已验证通过，结果为 `BUILD SUCCESS`。
+- RabbitMQ 管理端 `http://localhost:15672` 可访问。
+- RabbitMQ 中已创建 `Exchange = youxuan.product.exchange`。
+- RabbitMQ 中已创建 `Queue = youxuan.product.sync-es.queue`。
+- 临时启动 `youxuan-product-service` 和 `youxuan-search-service` 后，`/test/ping` 均返回统一 `Result` 成功。
+- 新增商品后不手动调用 `importAll`，搜索接口返回 `createSearchTotal = 1`。
+- 修改商品名称后不手动调用 `importAll`，搜索接口返回 `updateSearchTotal = 1`。
+- 下架商品后不手动调用 `importAll`，搜索接口返回 `downSearchTotal = 0`。
+- 上架商品后不手动调用 `importAll`，搜索接口返回 `upSearchTotal = 1`。
+- 删除商品后不手动调用 `importAll`，搜索接口返回 `deleteSearchTotal = 0`。
+- RabbitMQ 队列验收时 `queueMessages = 0`，消息已被 search-service 消费。
+- 阶段 7 Redis 缓存删除逻辑保留，阶段 9 仅在商品变更后追加 MQ 同步 ES。

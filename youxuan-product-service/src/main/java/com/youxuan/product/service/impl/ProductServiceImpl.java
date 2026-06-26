@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.youxuan.common.exception.BusinessException;
+import com.youxuan.common.message.ProductSyncMessage;
 import com.youxuan.common.result.ErrorCode;
 import com.youxuan.common.result.PageResult;
 import com.youxuan.product.dto.ProductCreateDTO;
@@ -15,6 +16,7 @@ import com.youxuan.product.entity.ProductStock;
 import com.youxuan.product.mapper.ProductCategoryMapper;
 import com.youxuan.product.mapper.ProductMapper;
 import com.youxuan.product.mapper.ProductStockMapper;
+import com.youxuan.product.mq.ProductSyncProducer;
 import com.youxuan.product.service.ProductCacheService;
 import com.youxuan.product.service.ProductService;
 import com.youxuan.product.vo.ProductVO;
@@ -36,15 +38,18 @@ public class ProductServiceImpl implements ProductService {
     private final ProductCategoryMapper productCategoryMapper;
     private final ProductStockMapper productStockMapper;
     private final ProductCacheService productCacheService;
+    private final ProductSyncProducer productSyncProducer;
 
     public ProductServiceImpl(ProductMapper productMapper,
                               ProductCategoryMapper productCategoryMapper,
                               ProductStockMapper productStockMapper,
-                              ProductCacheService productCacheService) {
+                              ProductCacheService productCacheService,
+                              ProductSyncProducer productSyncProducer) {
         this.productMapper = productMapper;
         this.productCategoryMapper = productCategoryMapper;
         this.productStockMapper = productStockMapper;
         this.productCacheService = productCacheService;
+        this.productSyncProducer = productSyncProducer;
     }
 
     /**
@@ -69,6 +74,7 @@ public class ProductServiceImpl implements ProductService {
         productStockMapper.insert(stock);
         ProductVO productVO = ProductVO.from(productMapper.selectById(product.getId()), category, getStock(product.getId()));
         deleteProductCaches(product.getId(), true);
+        productSyncProducer.sendAfterCommit(product.getId(), ProductSyncMessage.SAVE_OR_UPDATE);
         return productVO;
     }
 
@@ -86,6 +92,7 @@ public class ProductServiceImpl implements ProductService {
         productMapper.updateById(product);
         ProductVO productVO = ProductVO.from(productMapper.selectById(id), category, getStock(id));
         deleteProductCaches(id, true);
+        productSyncProducer.sendAfterCommit(id, ProductSyncMessage.SAVE_OR_UPDATE);
         return productVO;
     }
 
@@ -96,6 +103,7 @@ public class ProductServiceImpl implements ProductService {
         productMapper.deleteById(id);
         productStockMapper.delete(new LambdaQueryWrapper<ProductStock>().eq(ProductStock::getProductId, id));
         deleteProductCaches(id, true);
+        productSyncProducer.sendAfterCommit(id, ProductSyncMessage.DELETE);
     }
 
     @Override
@@ -136,6 +144,7 @@ public class ProductServiceImpl implements ProductService {
     public void up(Long id) {
         updateStatus(id, STATUS_ON);
         deleteProductCaches(id, true);
+        productSyncProducer.sendAfterCommit(id, ProductSyncMessage.UP);
     }
 
     @Override
@@ -143,6 +152,7 @@ public class ProductServiceImpl implements ProductService {
     public void down(Long id) {
         updateStatus(id, STATUS_OFF);
         deleteProductCaches(id, true);
+        productSyncProducer.sendAfterCommit(id, ProductSyncMessage.DOWN);
     }
 
     /**

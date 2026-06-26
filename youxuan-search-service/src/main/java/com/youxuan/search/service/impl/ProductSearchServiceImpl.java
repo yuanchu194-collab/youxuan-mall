@@ -19,6 +19,8 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.apache.http.entity.ContentType;
 import org.apache.http.entity.StringEntity;
 import org.apache.http.util.EntityUtils;
@@ -35,6 +37,7 @@ import org.springframework.util.StringUtils;
 @Service
 public class ProductSearchServiceImpl implements ProductSearchService {
 
+    private static final Logger log = LoggerFactory.getLogger(ProductSearchServiceImpl.class);
     private static final String INDEX_NAME = "youxuan_product";
     private static final int STATUS_ON = 1;
     private static final long IMPORT_PAGE_SIZE = 100L;
@@ -108,6 +111,60 @@ public class ProductSearchServiceImpl implements ProductSearchService {
         }
     }
 
+    @Override
+    public void syncProduct(Long productId) {
+        if (productId == null) {
+            throw new BusinessException(ErrorCode.PARAM_ERROR, "商品ID不能为空");
+        }
+        try {
+            Result<ProductClientVO> result = productClient.detail(productId);
+            if (result == null || !Integer.valueOf(200).equals(result.getCode()) || result.getData() == null) {
+                deleteProductDocument(productId);
+                return;
+            }
+
+            ProductClientVO product = result.getData();
+            if (!Integer.valueOf(STATUS_ON).equals(product.getStatus())) {
+                deleteProductDocument(productId);
+                return;
+            }
+
+            createIndexIfAbsent();
+            ProductDocument document = ProductDocument.from(product);
+            Request request = new Request("PUT", "/" + INDEX_NAME + "/_doc/" + productId);
+            request.addParameter("refresh", "true");
+            request.setJsonEntity(objectMapper.writeValueAsString(document));
+            restClient.performRequest(request);
+            log.info("商品 ES 文档保存成功 productId={}", productId);
+        } catch (Exception exception) {
+            throw new BusinessException(ErrorCode.BUSINESS_ERROR, "同步商品 ES 文档失败：" + exception.getMessage());
+        }
+    }
+
+    @Override
+    public void deleteProductDocument(Long productId) {
+        if (productId == null) {
+            return;
+        }
+        try {
+            if (!indexExists()) {
+                return;
+            }
+            Request request = new Request("DELETE", "/" + INDEX_NAME + "/_doc/" + productId);
+            request.addParameter("refresh", "true");
+            restClient.performRequest(request);
+            log.info("商品 ES 文档删除成功 productId={}", productId);
+        } catch (ResponseException exception) {
+            if (exception.getResponse().getStatusLine().getStatusCode() == 404) {
+                log.info("商品 ES 文档不存在，无需删除 productId={}", productId);
+                return;
+            }
+            throw new BusinessException(ErrorCode.BUSINESS_ERROR, "删除商品 ES 文档失败：" + exception.getMessage());
+        } catch (IOException exception) {
+            throw new BusinessException(ErrorCode.BUSINESS_ERROR, "删除商品 ES 文档失败：" + exception.getMessage());
+        }
+    }
+
     private PageResult<ProductClientVO> fetchProductPage(long pageNum) {
         Result<PageResult<ProductClientVO>> result = productClient.page(pageNum, IMPORT_PAGE_SIZE);
         if (result == null || !Integer.valueOf(200).equals(result.getCode()) || result.getData() == null) {
@@ -120,6 +177,16 @@ public class ProductSearchServiceImpl implements ProductSearchService {
         if (indexExists()) {
             restClient.performRequest(new Request("DELETE", "/" + INDEX_NAME));
         }
+        createIndex();
+    }
+
+    private void createIndexIfAbsent() throws IOException {
+        if (!indexExists()) {
+            createIndex();
+        }
+    }
+
+    private void createIndex() throws IOException {
         Request request = new Request("PUT", "/" + INDEX_NAME);
         request.setJsonEntity(buildIndexMapping());
         restClient.performRequest(request);

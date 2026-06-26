@@ -12,4 +12,8 @@ public interface ProductSearchService {
     Integer importAll();
 
     PageResult<ProductSearchVO> search(ProductSearchRequest request);
+
+    void syncProduct(Long productId);
+
+    void deleteProductDocument(Long productId);
 }

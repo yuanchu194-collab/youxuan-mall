@@ -5,6 +5,7 @@ import com.youxuan.common.result.Result;
 import com.youxuan.search.client.vo.ProductClientVO;
 import org.springframework.cloud.openfeign.FeignClient;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestParam;
 
 /**
@@ -16,4 +17,7 @@ public interface ProductClient {
     @GetMapping("/page")
     Result<PageResult<ProductClientVO>> page(@RequestParam(name = "pageNum") Long pageNum,
                                              @RequestParam(name = "pageSize") Long pageSize);
+
+    @GetMapping("/{id}")
+    Result<ProductClientVO> detail(@PathVariable("id") Long id);
 }
