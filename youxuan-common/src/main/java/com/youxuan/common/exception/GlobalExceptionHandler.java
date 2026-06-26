@@ -2,6 +2,8 @@ package com.youxuan.common.exception;
 
 import com.youxuan.common.result.ErrorCode;
 import com.youxuan.common.result.Result;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -12,6 +14,8 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
  */
 @RestControllerAdvice
 public class GlobalExceptionHandler {
+
+    private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
 
     /**
      * 处理业务异常，保持业务错误码和错误提示可控。
@@ -46,6 +50,7 @@ public class GlobalExceptionHandler {
      */
     @ExceptionHandler(Exception.class)
     public Result<Void> handleException(Exception exception) {
+        log.error("Unhandled system exception", exception);
         return Result.fail(ErrorCode.SYSTEM_ERROR);
     }
 }

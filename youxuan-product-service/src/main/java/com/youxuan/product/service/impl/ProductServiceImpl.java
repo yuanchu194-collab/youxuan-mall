@@ -1,0 +1,216 @@
+package com.youxuan.product.service.impl;
+
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.youxuan.common.exception.BusinessException;
+import com.youxuan.common.result.ErrorCode;
+import com.youxuan.common.result.PageResult;
+import com.youxuan.product.dto.ProductCreateDTO;
+import com.youxuan.product.dto.ProductUpdateDTO;
+import com.youxuan.product.dto.StockChangeDTO;
+import com.youxuan.product.entity.Product;
+import com.youxuan.product.entity.ProductCategory;
+import com.youxuan.product.entity.ProductStock;
+import com.youxuan.product.mapper.ProductCategoryMapper;
+import com.youxuan.product.mapper.ProductMapper;
+import com.youxuan.product.mapper.ProductStockMapper;
+import com.youxuan.product.service.ProductService;
+import com.youxuan.product.vo.ProductVO;
+import java.util.List;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
+
+/**
+ * 商品服务实现。
+ */
+@Service
+public class ProductServiceImpl implements ProductService {
+
+    private static final int STATUS_OFF = 0;
+    private static final int STATUS_ON = 1;
+
+    private final ProductMapper productMapper;
+    private final ProductCategoryMapper productCategoryMapper;
+    private final ProductStockMapper productStockMapper;
+
+    public ProductServiceImpl(ProductMapper productMapper,
+                              ProductCategoryMapper productCategoryMapper,
+                              ProductStockMapper productStockMapper) {
+        this.productMapper = productMapper;
+        this.productCategoryMapper = productCategoryMapper;
+        this.productStockMapper = productStockMapper;
+    }
+
+    /**
+     * 新增商品和初始化库存必须在同一个事务内完成，避免出现有商品无库存的脏数据。
+     */
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public ProductVO create(ProductCreateDTO createDTO) {
+        ProductCategory category = getEnabledCategory(createDTO.getCategoryId());
+
+        Product product = new Product();
+        fillProduct(product, createDTO.getCategoryId(), createDTO.getName(), createDTO.getSubtitle(),
+                createDTO.getMainImage(), createDTO.getDetail(), createDTO.getPrice(), createDTO.getOriginalPrice(),
+                createDTO.getSales(), createDTO.getStatus());
+        product.setDeleted(0);
+        productMapper.insert(product);
+
+        ProductStock stock = new ProductStock();
+        stock.setProductId(product.getId());
+        stock.setStock(createDTO.getStock());
+        stock.setLockedStock(0);
+        productStockMapper.insert(stock);
+        return ProductVO.from(productMapper.selectById(product.getId()), category, getStock(product.getId()));
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public ProductVO update(Long id, ProductUpdateDTO updateDTO) {
+        getProduct(id);
+        ProductCategory category = getEnabledCategory(updateDTO.getCategoryId());
+
+        Product product = new Product();
+        product.setId(id);
+        fillProduct(product, updateDTO.getCategoryId(), updateDTO.getName(), updateDTO.getSubtitle(),
+                updateDTO.getMainImage(), updateDTO.getDetail(), updateDTO.getPrice(), updateDTO.getOriginalPrice(),
+                updateDTO.getSales(), updateDTO.getStatus());
+        productMapper.updateById(product);
+        return ProductVO.from(productMapper.selectById(id), category, getStock(id));
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void delete(Long id) {
+        getProduct(id);
+        productMapper.deleteById(id);
+        productStockMapper.delete(new LambdaQueryWrapper<ProductStock>().eq(ProductStock::getProductId, id));
+    }
+
+    @Override
+    public ProductVO detail(Long id) {
+        Product product = getProduct(id);
+        return toVO(product);
+    }
+
+    @Override
+    public PageResult<ProductVO> page(Long pageNum, Long pageSize, String name, Long categoryId, Integer status) {
+        long current = pageNum == null || pageNum < 1 ? 1L : pageNum;
+        long size = pageSize == null || pageSize < 1 ? 10L : pageSize;
+        Page<Product> page = productMapper.selectPage(new Page<>(current, size),
+                new LambdaQueryWrapper<Product>()
+                        .like(StringUtils.hasText(name), Product::getName, name)
+                        .eq(categoryId != null, Product::getCategoryId, categoryId)
+                        .eq(status != null, Product::getStatus, status)
+                        .orderByDesc(Product::getId));
+        List<ProductVO> records = page.getRecords().stream().map(this::toVO).toList();
+        return PageResult.of(page.getTotal(), current, size, records);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void up(Long id) {
+        updateStatus(id, STATUS_ON);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void down(Long id) {
+        updateStatus(id, STATUS_OFF);
+    }
+
+    /**
+     * 扣减库存使用带 stock >= quantity 条件的原子更新，库存不足时不会更新任何行。
+     */
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public ProductVO deductStock(StockChangeDTO stockChangeDTO) {
+        Product product = getProduct(stockChangeDTO.getProductId());
+        int quantity = stockChangeDTO.getQuantity();
+        int updated = productStockMapper.update(null, new LambdaUpdateWrapper<ProductStock>()
+                .eq(ProductStock::getProductId, product.getId())
+                .ge(ProductStock::getStock, quantity)
+                .setSql("stock = stock - " + quantity)
+                .setSql("locked_stock = locked_stock + " + quantity));
+        if (updated == 0) {
+            throw new BusinessException(ErrorCode.BUSINESS_ERROR, "商品库存不足");
+        }
+        return toVO(productMapper.selectById(product.getId()));
+    }
+
+    /**
+     * 恢复库存用于后续订单取消，把锁定库存释放回可用库存。
+     */
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public ProductVO restoreStock(StockChangeDTO stockChangeDTO) {
+        Product product = getProduct(stockChangeDTO.getProductId());
+        int quantity = stockChangeDTO.getQuantity();
+        int updated = productStockMapper.update(null, new LambdaUpdateWrapper<ProductStock>()
+                .eq(ProductStock::getProductId, product.getId())
+                .ge(ProductStock::getLockedStock, quantity)
+                .setSql("stock = stock + " + quantity)
+                .setSql("locked_stock = locked_stock - " + quantity));
+        if (updated == 0) {
+            throw new BusinessException(ErrorCode.BUSINESS_ERROR, "可恢复库存不足");
+        }
+        return toVO(productMapper.selectById(product.getId()));
+    }
+
+    private void updateStatus(Long id, int status) {
+        Product product = getProduct(id);
+        productMapper.update(null, new LambdaUpdateWrapper<Product>()
+                .eq(Product::getId, product.getId())
+                .set(Product::getStatus, status));
+    }
+
+    private Product getProduct(Long id) {
+        if (id == null) {
+            throw new BusinessException(ErrorCode.PARAM_ERROR, "商品ID不能为空");
+        }
+        Product product = productMapper.selectById(id);
+        if (product == null) {
+            throw new BusinessException(ErrorCode.NOT_FOUND, "商品不存在");
+        }
+        return product;
+    }
+
+    private ProductCategory getEnabledCategory(Long categoryId) {
+        if (categoryId == null) {
+            throw new BusinessException(ErrorCode.PARAM_ERROR, "分类ID不能为空");
+        }
+        ProductCategory category = productCategoryMapper.selectById(categoryId);
+        if (category == null || !Integer.valueOf(STATUS_ON).equals(category.getStatus())) {
+            throw new BusinessException(ErrorCode.BUSINESS_ERROR, "商品分类不存在或已禁用");
+        }
+        return category;
+    }
+
+    private ProductStock getStock(Long productId) {
+        return productStockMapper.selectOne(new LambdaQueryWrapper<ProductStock>()
+                .eq(ProductStock::getProductId, productId)
+                .last("LIMIT 1"));
+    }
+
+    private ProductVO toVO(Product product) {
+        ProductCategory category = productCategoryMapper.selectById(product.getCategoryId());
+        ProductStock stock = getStock(product.getId());
+        return ProductVO.from(product, category, stock);
+    }
+
+    private void fillProduct(Product product, Long categoryId, String name, String subtitle, String mainImage,
+                             String detail, java.math.BigDecimal price, java.math.BigDecimal originalPrice,
+                             Integer sales, Integer status) {
+        product.setCategoryId(categoryId);
+        product.setName(name.trim());
+        product.setSubtitle(subtitle);
+        product.setMainImage(mainImage);
+        product.setDetail(detail);
+        product.setPrice(price);
+        product.setOriginalPrice(originalPrice);
+        product.setSales(sales == null ? 0 : sales);
+        product.setStatus(status == null ? STATUS_ON : status);
+    }
+}

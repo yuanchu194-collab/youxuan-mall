@@ -17,3 +17,46 @@ CREATE TABLE IF NOT EXISTS sys_user (
     deleted TINYINT NOT NULL DEFAULT 0 COMMENT '逻辑删除 0未删除 1已删除',
     UNIQUE KEY uk_username (username)
 ) COMMENT='用户表';
+
+CREATE TABLE IF NOT EXISTS product_category (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT COMMENT '分类ID',
+    name VARCHAR(64) NOT NULL COMMENT '分类名称',
+    parent_id BIGINT NOT NULL DEFAULT 0 COMMENT '父分类ID',
+    sort INT NOT NULL DEFAULT 0 COMMENT '排序',
+    status TINYINT NOT NULL DEFAULT 1 COMMENT '状态 1启用 0禁用',
+    create_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    update_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    deleted TINYINT NOT NULL DEFAULT 0 COMMENT '逻辑删除',
+    KEY idx_parent_id (parent_id),
+    KEY idx_status_sort (status, sort)
+) DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='商品分类表';
+
+CREATE TABLE IF NOT EXISTS product (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT COMMENT '商品ID',
+    category_id BIGINT NOT NULL COMMENT '分类ID',
+    name VARCHAR(128) NOT NULL COMMENT '商品名称',
+    subtitle VARCHAR(255) DEFAULT NULL COMMENT '副标题',
+    main_image VARCHAR(255) DEFAULT NULL COMMENT '主图',
+    detail TEXT COMMENT '商品详情',
+    price DECIMAL(10,2) NOT NULL COMMENT '售价',
+    original_price DECIMAL(10,2) DEFAULT NULL COMMENT '原价',
+    sales INT NOT NULL DEFAULT 0 COMMENT '销量',
+    status TINYINT NOT NULL DEFAULT 1 COMMENT '状态 1上架 0下架',
+    create_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    update_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    deleted TINYINT NOT NULL DEFAULT 0 COMMENT '逻辑删除',
+    KEY idx_category_id (category_id),
+    KEY idx_status (status),
+    KEY idx_price (price),
+    KEY idx_name (name)
+) DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='商品表';
+
+CREATE TABLE IF NOT EXISTS product_stock (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT COMMENT '库存ID',
+    product_id BIGINT NOT NULL COMMENT '商品ID',
+    stock INT NOT NULL DEFAULT 0 COMMENT '可用库存',
+    locked_stock INT NOT NULL DEFAULT 0 COMMENT '锁定库存',
+    create_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    update_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uk_product_id (product_id)
+) DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='商品库存表';

@@ -69,6 +69,128 @@
 docker compose -f docker/docker-compose.yml up -d mysql nacos
 ```
 
+## 阶段 6：商品服务 CRUD 与库存
+
+本阶段只实现 `youxuan-product-service` 的商品分类、商品 CRUD、上下架、库存初始化、库存扣减和库存恢复。
+
+未实现内容：Redis 商品缓存、Elasticsearch 搜索、RabbitMQ 商品同步、MinIO 图片上传、购物车、订单、优惠券、首页运营。
+
+### 数据库表
+
+新增表：
+
+- `product_category`
+- `product`
+- `product_stock`
+
+建表 SQL 已追加到 `docker/mysql/init/01-init.sql`。如果本机 MySQL 容器已经初始化过数据卷，Docker 不会自动重新执行 init SQL，需要手动连接 `localhost:3307` 的 `youxuan_mall` 数据库执行这三张表的建表语句。
+
+### 启动顺序
+
+```powershell
+docker compose -f docker/docker-compose.yml up -d mysql nacos
+```
+
+分别启动：
+
+```powershell
+mvn -pl youxuan-user-service -am spring-boot:run
+mvn -pl youxuan-product-service -am spring-boot:run
+mvn -pl youxuan-gateway -am spring-boot:run
+```
+
+所有业务接口统一从 Gateway 访问：
+
+```text
+http://localhost:9000
+```
+
+除注册、登录、`/test/ping` 外，商品接口都需要：
+
+```text
+Authorization: Bearer <token>
+```
+
+### 登录获取 token
+
+```powershell
+$loginBody = @{
+  username = "testuser"
+  password = "123456"
+} | ConvertTo-Json
+
+$login = Invoke-RestMethod -Method Post -Uri http://localhost:9000/api/user/login -ContentType "application/json" -Body $loginBody
+$token = $login.data.token
+$headers = @{ Authorization = "Bearer $token" }
+```
+
+### 商品分类测试
+
+```powershell
+$categoryBody = @{
+  name = "手机数码"
+  parentId = 0
+  sort = 1
+  status = 1
+} | ConvertTo-Json
+
+$category = Invoke-RestMethod -Method Post -Uri http://localhost:9000/api/product/category -Headers $headers -ContentType "application/json" -Body $categoryBody
+$categoryId = $category.data.id
+
+Invoke-RestMethod -Method Get -Uri http://localhost:9000/api/product/category/list -Headers $headers
+```
+
+### 商品新增和查询测试
+
+```powershell
+$productBody = @{
+  categoryId = $categoryId
+  name = "优选无线耳机"
+  subtitle = "高清音质，长续航"
+  mainImage = "http://localhost:9100/youxuan-mall/products/demo.jpg"
+  detail = "阶段6先保存图片URL，不实现图片上传。"
+  price = 199.00
+  originalPrice = 299.00
+  sales = 0
+  status = 1
+  stock = 10
+} | ConvertTo-Json
+
+$product = Invoke-RestMethod -Method Post -Uri http://localhost:9000/api/product -Headers $headers -ContentType "application/json" -Body $productBody
+$productId = $product.data.id
+
+Invoke-RestMethod -Method Get -Uri "http://localhost:9000/api/product/page?pageNum=1&pageSize=10&name=耳机&categoryId=$categoryId&status=1" -Headers $headers
+Invoke-RestMethod -Method Get -Uri "http://localhost:9000/api/product/$productId" -Headers $headers
+Invoke-RestMethod -Method Put -Uri "http://localhost:9000/api/product/$productId/down" -Headers $headers
+Invoke-RestMethod -Method Put -Uri "http://localhost:9000/api/product/$productId/up" -Headers $headers
+```
+
+### 库存扣减和恢复测试
+
+```powershell
+$deductBody = @{
+  productId = $productId
+  quantity = 3
+} | ConvertTo-Json
+
+Invoke-RestMethod -Method Post -Uri http://localhost:9000/api/product/stock/deduct -Headers $headers -ContentType "application/json" -Body $deductBody
+
+$notEnoughBody = @{
+  productId = $productId
+  quantity = 999
+} | ConvertTo-Json
+
+Invoke-RestMethod -Method Post -Uri http://localhost:9000/api/product/stock/deduct -Headers $headers -ContentType "application/json" -Body $notEnoughBody
+
+$restoreBody = @{
+  productId = $productId
+  quantity = 3
+} | ConvertTo-Json
+
+Invoke-RestMethod -Method Post -Uri http://localhost:9000/api/product/stock/restore -Headers $headers -ContentType "application/json" -Body $restoreBody
+Invoke-RestMethod -Method Get -Uri "http://localhost:9000/api/product/$productId" -Headers $headers
+```
+
 Nacos 控制台：
 
 ```text
