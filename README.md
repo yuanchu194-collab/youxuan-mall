@@ -982,3 +982,138 @@ Invoke-RestMethod -Method Delete -Uri http://localhost:9000/api/cart/checked -He
 - `DELETE /api/cart/{id}` 可删除单个购物车项。
 - 第二个测试用户查询购物车返回空列表，验证用户数据隔离。
 - 购物车列表返回商品 `mainImage`、`price`、`stock` 等来自商品服务的实时字段。
+
+## 阶段 12：收货地址模块
+
+本阶段只在 `youxuan-user-service` 中实现收货地址管理，不新建独立 address-service，不实现订单确认页、创建订单、优惠券、支付、发货、确认收货、首页运营、前端、Canal、Sentinel、Seata 和秒杀，也未修改 `docker/docker-compose.yml`。
+
+### 数据库表
+
+新增表：
+
+- `user_address`
+
+建表 SQL 已追加到 `docker/mysql/init/01-init.sql`。如果本机 MySQL 容器已经初始化过数据卷，Docker 不会自动重新执行 init SQL，需要手动连接 `localhost:3307` 的 `youxuan_mall` 数据库执行 `user_address` 建表语句。
+
+### 启动依赖
+
+```powershell
+docker compose -f docker/docker-compose.yml up -d mysql nacos
+```
+
+启动服务：
+
+```powershell
+mvn -pl youxuan-user-service -am spring-boot:run
+mvn -pl youxuan-gateway -am spring-boot:run
+```
+
+所有地址接口统一从 Gateway 访问：
+
+```text
+http://localhost:9000/api/user/address/**
+```
+
+### 登录获取 Token
+
+```powershell
+$loginBody = @{
+  username = "testuser"
+  password = "123456"
+} | ConvertTo-Json
+
+$login = Invoke-RestMethod -Method Post -Uri http://localhost:9000/api/user/login -ContentType "application/json" -Body $loginBody
+$token = $login.data.token
+$headers = @{ Authorization = "Bearer $token" }
+```
+
+### 收货地址接口测试
+
+新增地址：
+
+```powershell
+$addressBody = @{
+  receiverName = "张三"
+  receiverPhone = "13800000000"
+  province = "广东省"
+  city = "深圳市"
+  district = "南山区"
+  detailAddress = "科技园1号楼"
+  defaultFlag = 1
+} | ConvertTo-Json
+
+$address = Invoke-RestMethod -Method Post -Uri http://localhost:9000/api/user/address -Headers $headers -ContentType "application/json" -Body $addressBody
+$addressId = $address.data.id
+```
+
+查询我的地址列表：
+
+```powershell
+Invoke-RestMethod -Method Get -Uri http://localhost:9000/api/user/address/list -Headers $headers
+```
+
+查询默认地址：
+
+```powershell
+Invoke-RestMethod -Method Get -Uri http://localhost:9000/api/user/address/default -Headers $headers
+```
+
+修改地址：
+
+```powershell
+$updateAddressBody = @{
+  receiverName = "李四"
+  receiverPhone = "13900000000"
+  province = "广东省"
+  city = "广州市"
+  district = "天河区"
+  detailAddress = "体育西路100号"
+  defaultFlag = 0
+} | ConvertTo-Json
+
+Invoke-RestMethod -Method Put -Uri "http://localhost:9000/api/user/address/$addressId" -Headers $headers -ContentType "application/json" -Body $updateAddressBody
+```
+
+设置默认地址：
+
+```powershell
+Invoke-RestMethod -Method Put -Uri "http://localhost:9000/api/user/address/$addressId/default" -Headers $headers
+```
+
+删除地址：
+
+```powershell
+Invoke-RestMethod -Method Delete -Uri "http://localhost:9000/api/user/address/$addressId" -Headers $headers
+```
+
+### 验收要点
+
+- 地址接口通过 `UserContext` 获取当前登录用户 ID。
+- 用户只能查询、修改、删除自己的地址。
+- 新增第一个地址会自动设置为默认地址。
+- 新增或修改地址时如果 `defaultFlag = 1`，同一用户其他地址会自动置为 `0`。
+- 设置默认地址时，同一用户其他地址会自动置为 `0`。
+- 删除地址使用逻辑删除，删除默认地址后不强制自动选择新的默认地址。
+- 查询默认地址没有数据时返回统一 `Result`，`data = null`。
+
+### 本地验收记录
+
+验收日期：2026-06-26
+
+已验证内容：
+
+- `mvn -q -DskipTests package` 已验证通过。
+- Docker 中 `mysql`、`nacos` 处于运行状态。
+- 既有 MySQL 数据卷不会自动重放 init SQL，本地验收前已手动执行 `user_address` 建表语句。
+- 临时启动 `youxuan-user-service` 和 `youxuan-gateway` 后，Gateway 访问 `/api/user/test/ping` 返回 `200`。
+- 通过 Gateway 注册、登录并获取 token 成功。
+- 无默认地址时，`GET /api/user/address/default` 返回 `data = null`。
+- 第一次新增地址即使传入 `defaultFlag = 0`，也会自动返回 `defaultFlag = 1`。
+- 第二次新增地址传入 `defaultFlag = 1` 后，默认地址切换为第二个地址。
+- 查询地址列表返回当前用户的两条地址。
+- 修改第一个地址并传入 `defaultFlag = 1` 后，默认地址切换为第一个地址，且同一用户默认地址数量保持为 `1`。
+- 调用 `PUT /api/user/address/{id}/default` 可设置默认地址，且同一用户默认地址数量保持为 `1`。
+- 第二个测试用户查询地址列表返回空列表，验证用户数据隔离。
+- 第二个测试用户尝试修改第一个用户地址，返回统一 `Result` 业务码 `404`，提示 `收货地址不存在`。
+- 删除默认地址后，地址列表不再显示该地址，且不自动选择新的默认地址。
+- 本阶段未实现订单、优惠券、支付等后续阶段能力。

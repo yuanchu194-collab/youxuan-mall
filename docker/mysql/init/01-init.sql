@@ -74,3 +74,19 @@ CREATE TABLE IF NOT EXISTS cart_item (
     KEY idx_user_id (user_id),
     KEY idx_product_id (product_id)
 ) DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='购物车表';
+
+CREATE TABLE IF NOT EXISTS user_address (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT COMMENT '地址ID',
+    user_id BIGINT NOT NULL COMMENT '用户ID',
+    receiver_name VARCHAR(64) NOT NULL COMMENT '收货人姓名',
+    receiver_phone VARCHAR(20) NOT NULL COMMENT '收货人手机号',
+    province VARCHAR(64) NOT NULL COMMENT '省份',
+    city VARCHAR(64) NOT NULL COMMENT '城市',
+    district VARCHAR(64) NOT NULL COMMENT '区县',
+    detail_address VARCHAR(255) NOT NULL COMMENT '详细地址',
+    default_flag TINYINT NOT NULL DEFAULT 0 COMMENT '是否默认地址 1是 0否',
+    create_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    update_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    deleted TINYINT NOT NULL DEFAULT 0 COMMENT '逻辑删除',
+    KEY idx_user_id (user_id)
+) DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='用户收货地址表';
