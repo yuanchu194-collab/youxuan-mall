@@ -389,3 +389,139 @@ Invoke-RestMethod -Method Get -Uri "http://localhost:9000/api/product/home/hot" 
 youxuan:product:detail:1
 youxuan:home:hot-products
 ```
+
+## 阶段 8：Elasticsearch 商品搜索
+
+本阶段只实现 `youxuan-search-service` 的商品索引创建、手动全量导入和搜索查询，不实现 RabbitMQ 商品变更自动同步，也不涉及 MinIO、购物车、订单、优惠券、首页运营、Canal、Sentinel、Seata 和秒杀。
+
+### 启动依赖
+
+```powershell
+docker compose -f docker/docker-compose.yml up -d mysql nacos elasticsearch
+```
+
+检查 Elasticsearch：
+
+```powershell
+Invoke-RestMethod -Method Get -Uri http://localhost:9200
+```
+
+启动服务：
+
+```powershell
+mvn -pl youxuan-user-service -am spring-boot:run
+mvn -pl youxuan-product-service -am spring-boot:run
+mvn -pl youxuan-search-service -am spring-boot:run
+mvn -pl youxuan-gateway -am spring-boot:run
+```
+
+### 登录获取 Token
+
+```powershell
+$loginBody = @{
+  username = "testuser"
+  password = "123456"
+} | ConvertTo-Json
+
+$login = Invoke-RestMethod -Method Post -Uri http://localhost:9000/api/user/login -ContentType "application/json" -Body $loginBody
+$token = $login.data.token
+$headers = @{ Authorization = "Bearer $token" }
+```
+
+### 手动全量导入商品到 ES
+
+```powershell
+Invoke-RestMethod -Method Post -Uri http://localhost:9000/api/search/product/importAll -Headers $headers
+```
+
+确认索引存在：
+
+```powershell
+Invoke-RestMethod -Method Get -Uri http://localhost:9200/youxuan_product
+```
+
+### 商品搜索测试
+
+关键词搜索：
+
+```powershell
+$searchBody = @{
+  keyword = "耳机"
+  pageNum = 1
+  pageSize = 10
+} | ConvertTo-Json
+
+Invoke-RestMethod -Method Post -Uri http://localhost:9000/api/search/product -Headers $headers -ContentType "application/json" -Body $searchBody
+```
+
+分类和价格区间筛选：
+
+```powershell
+$filterBody = @{
+  categoryId = 1
+  minPrice = 100
+  maxPrice = 500
+  pageNum = 1
+  pageSize = 10
+} | ConvertTo-Json
+
+Invoke-RestMethod -Method Post -Uri http://localhost:9000/api/search/product -Headers $headers -ContentType "application/json" -Body $filterBody
+```
+
+按价格升序和降序：
+
+```powershell
+$priceAscBody = @{
+  sortField = "price"
+  sortOrder = "asc"
+  pageNum = 1
+  pageSize = 10
+} | ConvertTo-Json
+
+Invoke-RestMethod -Method Post -Uri http://localhost:9000/api/search/product -Headers $headers -ContentType "application/json" -Body $priceAscBody
+
+$priceDescBody = @{
+  sortField = "price"
+  sortOrder = "desc"
+  pageNum = 1
+  pageSize = 10
+} | ConvertTo-Json
+
+Invoke-RestMethod -Method Post -Uri http://localhost:9000/api/search/product -Headers $headers -ContentType "application/json" -Body $priceDescBody
+```
+
+按销量降序和分页：
+
+```powershell
+$salesBody = @{
+  sortField = "sales"
+  sortOrder = "desc"
+  pageNum = 1
+  pageSize = 5
+} | ConvertTo-Json
+
+Invoke-RestMethod -Method Post -Uri http://localhost:9000/api/search/product -Headers $headers -ContentType "application/json" -Body $salesBody
+```
+
+本阶段索引名：
+
+```text
+youxuan_product
+```
+
+### 本地验收记录
+
+验收日期：2026-06-26
+
+已验证内容：
+
+- `http://localhost:9200` 可访问，Elasticsearch 版本为 `7.17.18`。
+- `mvn -DskipTests package` 已验证通过，结果为 `BUILD SUCCESS`。
+- 临时启动 `youxuan-product-service` 和 `youxuan-search-service` 后，`/test/ping` 均返回统一 `Result` 成功。
+- 调用 `POST /product/importAll` 可创建并重建 `youxuan_product` 索引，本地导入商品数为 `1`。
+- 调用 `POST /product` 搜索关键词 `耳机` 返回 `1` 条商品。
+- 分类筛选、价格区间筛选、`price asc` 排序、`sales desc` 排序和分页参数均完成直连验收。
+- 临时启动 `youxuan-user-service`、`youxuan-product-service`、`youxuan-search-service`、`youxuan-gateway` 后，通过 Gateway 登录获取 token 成功。
+- 通过 Gateway 携带 `Authorization: Bearer token` 调用 `POST /api/search/product/importAll` 成功，导入商品数为 `1`。
+- 通过 Gateway 调用 `POST /api/search/product` 搜索关键词 `耳机` 成功，返回 `1` 条商品。
+- 本阶段未实现 RabbitMQ 商品变更自动同步，商品变更后不会自动同步 ES；自动同步属于阶段 9。
