@@ -5,6 +5,7 @@ import com.youxuan.common.result.Result;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -43,6 +44,14 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(HttpMessageNotReadableException.class)
     public Result<Void> handleHttpMessageNotReadableException(HttpMessageNotReadableException exception) {
         return Result.fail(ErrorCode.PARAM_ERROR, "请求体格式错误");
+    }
+
+    /**
+     * 处理 multipart 上传大小超限，避免文件上传验收时返回系统异常。
+     */
+    @ExceptionHandler(MaxUploadSizeExceededException.class)
+    public Result<Void> handleMaxUploadSizeExceededException(MaxUploadSizeExceededException exception) {
+        return Result.fail(ErrorCode.PARAM_ERROR, "上传文件不能超过5MB");
     }
 
     /**

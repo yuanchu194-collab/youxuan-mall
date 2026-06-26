@@ -36,6 +36,7 @@
         <knife4j.version>4.5.0</knife4j.version>
         <jjwt.version>0.12.5</jjwt.version>
         <elasticsearch.version>7.17.18</elasticsearch.version>
+        <minio.version>8.5.17</minio.version>
         <maven.compiler.source>${java.version}</maven.compiler.source>
         <maven.compiler.target>${java.version}</maven.compiler.target>
     </properties>
@@ -97,6 +98,11 @@
                 <groupId>org.elasticsearch.client</groupId>
                 <artifactId>elasticsearch-rest-client</artifactId>
                 <version>${elasticsearch.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.minio</groupId>
+                <artifactId>minio</artifactId>
+                <version>${minio.version}</version>
             </dependency>
         </dependencies>
     </dependencyManagement>

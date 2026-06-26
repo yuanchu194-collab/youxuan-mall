@@ -682,3 +682,158 @@ Invoke-RestMethod -Method Post -Uri http://localhost:9000/api/search/product -He
 - 删除商品后不手动调用 `importAll`，搜索接口返回 `deleteSearchTotal = 0`。
 - RabbitMQ 队列验收时 `queueMessages = 0`，消息已被 search-service 消费。
 - 阶段 7 Redis 缓存删除逻辑保留，阶段 9 仅在商品变更后追加 MQ 同步 ES。
+
+## 阶段 10：MinIO 文件服务与商品图片上传
+
+本阶段只完善 `youxuan-file-service` 的 MinIO 商品图片上传和删除能力，并验证商品 `mainImage` 从商品服务到 ES 搜索结果的返回链路。不实现购物车、订单、优惠券、首页运营、Canal、Sentinel、Seata、秒杀、真实支付和复杂权限系统。
+
+### 启动依赖
+
+```powershell
+docker compose -f docker/docker-compose.yml up -d mysql nacos redis rabbitmq elasticsearch minio
+```
+
+检查 MinIO：
+
+```powershell
+Invoke-WebRequest -UseBasicParsing -Uri http://localhost:9100/minio/health/live
+Invoke-WebRequest -UseBasicParsing -Uri http://localhost:9101
+```
+
+MinIO Console：
+
+```text
+地址：http://localhost:9101
+账号：minioadmin
+密码：minioadmin
+```
+
+启动服务：
+
+```powershell
+mvn -pl youxuan-user-service -am spring-boot:run
+mvn -pl youxuan-product-service -am spring-boot:run
+mvn -pl youxuan-search-service -am spring-boot:run
+mvn -pl youxuan-file-service -am spring-boot:run
+mvn -pl youxuan-gateway -am spring-boot:run
+```
+
+### 登录获取 Token
+
+```powershell
+$loginBody = @{
+  username = "testuser"
+  password = "123456"
+} | ConvertTo-Json
+
+$login = Invoke-RestMethod -Method Post -Uri http://localhost:9000/api/user/login -ContentType "application/json" -Body $loginBody
+$token = $login.data.token
+$headers = @{ Authorization = "Bearer $token" }
+```
+
+### 上传商品图片
+
+表单字段名必须是 `file`，支持 `jpg`、`jpeg`、`png`、`webp`，单文件最大 `5MB`。
+
+```powershell
+$imagePath = "D:\temp\demo.png"
+
+$upload = curl.exe -s -X POST `
+  -H "Authorization: Bearer $token" `
+  -F "file=@$imagePath;type=image/png" `
+  http://localhost:9000/api/file/product/image | ConvertFrom-Json
+
+$upload.data
+```
+
+返回字段：
+
+```json
+{
+  "url": "http://localhost:9100/youxuan-mall/products/2026/06/xxx.png",
+  "bucket": "youxuan-mall",
+  "objectName": "products/2026/06/xxx.png"
+}
+```
+
+验证返回 URL 可以打开：
+
+```powershell
+Invoke-WebRequest -UseBasicParsing -Uri $upload.data.url
+```
+
+### 新增商品保存 mainImage
+
+```powershell
+$productBody = @{
+  categoryId = 1
+  name = "阶段10图片商品"
+  subtitle = "MinIO图片验收"
+  mainImage = $upload.data.url
+  detail = "阶段10商品图片测试"
+  price = 166.00
+  originalPrice = 199.00
+  sales = 66
+  status = 1
+  stock = 10
+} | ConvertTo-Json
+
+$created = Invoke-RestMethod -Method Post -Uri http://localhost:9000/api/product -Headers $headers -ContentType "application/json" -Body $productBody
+$productId = $created.data.id
+```
+
+验证商品详情、分页、热门商品和 ES 搜索结果返回 `mainImage`：
+
+```powershell
+Invoke-RestMethod -Method Get -Uri "http://localhost:9000/api/product/$productId" -Headers $headers
+Invoke-RestMethod -Method Get -Uri "http://localhost:9000/api/product/page?pageNum=1&pageSize=10" -Headers $headers
+Invoke-RestMethod -Method Get -Uri "http://localhost:9000/api/product/home/hot?limit=10" -Headers $headers
+
+$searchBody = @{
+  keyword = "阶段10图片商品"
+  pageNum = 1
+  pageSize = 10
+} | ConvertTo-Json
+
+Invoke-RestMethod -Method Post -Uri http://localhost:9000/api/search/product -Headers $headers -ContentType "application/json" -Body $searchBody
+```
+
+可选：直接确认数据库 `product.main_image` 已保存 URL：
+
+```powershell
+docker exec youxuan-mysql mysql -uroot -proot -D youxuan_mall -N -e "SELECT main_image FROM product WHERE id=$productId"
+```
+
+### 删除商品图片
+
+删除接口传 `objectName`，不是完整 URL。
+
+```powershell
+Invoke-RestMethod -Method Delete `
+  -Uri "http://localhost:9000/api/file/product/image?objectName=$([uri]::EscapeDataString($upload.data.objectName))" `
+  -Headers $headers
+```
+
+删除后再次访问原 URL，应返回 `404`。
+
+### 本地验收记录
+
+验收日期：2026-06-26
+
+已验证内容：
+
+- `mvn -DskipTests package` 已验证通过，结果为 `BUILD SUCCESS`。
+- `http://localhost:9100/minio/health/live` 返回 `200`。
+- `http://localhost:9101` 返回 `200`，MinIO Console 可打开。
+- `youxuan-file-service` 临时启动后注册到 Nacos，Gateway 访问 `/api/file/test/ping` 返回 `filePingCode = 200`。
+- 通过 Gateway 登录获取 token 成功，`loginCode = 200`。
+- 通过 Gateway 上传 `png`、`jpg`、`webp` 扩展名图片均成功，返回码均为 `200`。
+- 上传返回 `bucket = youxuan-mall`，`objectName` 符合 `products/{yyyy}/{MM}/{uuid}.{ext}`。
+- 上传返回 URL 可直接访问，HTTP 状态为 `200`。
+- 新增商品传入 `mainImage` 后，数据库 `product.main_image` 与上传 URL 一致。
+- 商品详情返回 `mainImage` 与上传 URL 一致。
+- 商品分页 `records` 中对应商品返回 `mainImage`。
+- 热门商品接口返回对应商品 `mainImage`。
+- ES 搜索结果返回 `mainImage` 与上传 URL 一致。
+- 删除图片接口成功删除 MinIO 对象，删除后访问原 URL 返回 `404`。
+- 阶段 7 Redis 缓存删除逻辑和阶段 9 RabbitMQ 同步 ES 链路保持原有行为。
