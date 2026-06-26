@@ -837,3 +837,148 @@ Invoke-RestMethod -Method Delete `
 - ES 搜索结果返回 `mainImage` 与上传 URL 一致。
 - 删除图片接口成功删除 MinIO 对象，删除后访问原 URL 返回 `404`。
 - 阶段 7 Redis 缓存删除逻辑和阶段 9 RabbitMQ 同步 ES 链路保持原有行为。
+
+## 阶段 11：购物车服务
+
+本阶段只完善 `youxuan-cart-service` 的购物车能力：加入购物车、修改数量、删除、查询、勾选、全选和删除已勾选商品。购物车表只保存 `userId`、`productId`、`quantity`、`checked`，商品名称、价格、主图、库存和上下架状态均通过 OpenFeign 实时调用 `youxuan-product-service` 获取。
+
+本阶段不实现收货地址、优惠券、订单、订单确认页、支付、首页运营服务、前端、Canal、Sentinel、Seata 和秒杀，也未修改 `docker/docker-compose.yml`。
+
+### 数据库表
+
+新增表：
+
+- `cart_item`
+
+建表 SQL 已追加到 `docker/mysql/init/01-init.sql`。如果本机 MySQL 容器已经初始化过数据卷，Docker 不会自动重新执行 init SQL，需要手动连接 `localhost:3307` 的 `youxuan_mall` 数据库执行 `cart_item` 建表语句。
+
+### 启动依赖
+
+```powershell
+docker compose -f docker/docker-compose.yml up -d mysql nacos redis rabbitmq elasticsearch minio
+```
+
+阶段 11 核心链路至少需要 `mysql`、`nacos`，购物车查询商品最新信息需要 `youxuan-product-service` 正常运行。
+
+启动服务：
+
+```powershell
+mvn -pl youxuan-user-service -am spring-boot:run
+mvn -pl youxuan-product-service -am spring-boot:run
+mvn -pl youxuan-cart-service -am spring-boot:run
+mvn -pl youxuan-gateway -am spring-boot:run
+```
+
+### 登录获取 Token
+
+```powershell
+$loginBody = @{
+  username = "testuser"
+  password = "123456"
+} | ConvertTo-Json
+
+$login = Invoke-RestMethod -Method Post -Uri http://localhost:9000/api/user/login -ContentType "application/json" -Body $loginBody
+$token = $login.data.token
+$headers = @{ Authorization = "Bearer $token" }
+```
+
+### 购物车接口测试
+
+加入购物车，重复加入同一商品会增加数量：
+
+```powershell
+$addBody = @{
+  productId = 1
+  quantity = 2
+} | ConvertTo-Json
+
+$cartItem = Invoke-RestMethod -Method Post -Uri http://localhost:9000/api/cart/add -Headers $headers -ContentType "application/json" -Body $addBody
+$cartItemId = $cartItem.data.cartItemId
+```
+
+查询我的购物车：
+
+```powershell
+Invoke-RestMethod -Method Get -Uri http://localhost:9000/api/cart/list -Headers $headers
+```
+
+返回字段包含：
+
+```text
+cartItemId, productId, productName, mainImage, price, quantity, checked, stock, status, totalAmount, offShelf, stockInsufficient, invalidReason
+```
+
+修改数量：
+
+```powershell
+$updateBody = @{
+  cartItemId = $cartItemId
+  quantity = 3
+} | ConvertTo-Json
+
+Invoke-RestMethod -Method Put -Uri http://localhost:9000/api/cart/update -Headers $headers -ContentType "application/json" -Body $updateBody
+```
+
+勾选或取消勾选单个商品：
+
+```powershell
+$checkBody = @{
+  cartItemId = $cartItemId
+  checked = 0
+} | ConvertTo-Json
+
+Invoke-RestMethod -Method Put -Uri http://localhost:9000/api/cart/check -Headers $headers -ContentType "application/json" -Body $checkBody
+```
+
+全选或取消全选：
+
+```powershell
+$checkAllBody = @{
+  checked = 1
+} | ConvertTo-Json
+
+Invoke-RestMethod -Method Put -Uri http://localhost:9000/api/cart/checkAll -Headers $headers -ContentType "application/json" -Body $checkAllBody
+```
+
+删除单个购物车项：
+
+```powershell
+Invoke-RestMethod -Method Delete -Uri "http://localhost:9000/api/cart/$cartItemId" -Headers $headers
+```
+
+删除已勾选商品：
+
+```powershell
+Invoke-RestMethod -Method Delete -Uri http://localhost:9000/api/cart/checked -Headers $headers
+```
+
+### 验收要点
+
+- Gateway 已有 `/api/cart/**` 路由，访问时会透传 `X-User-Id`。
+- `youxuan-cart-service` 从 `UserContext` 获取当前用户 ID。
+- 用户只能查询和操作自己的购物车项。
+- 同一用户同一商品只保留一条购物车记录。
+- 商品价格、名称、图片、库存、上下架状态不存入购物车表，查询时实时从商品服务获取。
+- 商品下架时 `offShelf = true`，库存不足时 `stockInsufficient = true`，并返回 `invalidReason`。
+
+### 本地验收记录
+
+验收日期：2026-06-26
+
+已验证内容：
+
+- `mvn -q -DskipTests package` 已验证通过。
+- Docker 中 `mysql`、`nacos`、`redis`、`rabbitmq`、`elasticsearch`、`minio` 均处于运行状态。
+- 既有 MySQL 数据卷不会自动重放 init SQL，本地验收前已手动执行 `cart_item` 建表语句。
+- 临时启动 `youxuan-user-service`、`youxuan-product-service`、`youxuan-cart-service`、`youxuan-gateway` 后，Gateway 访问 `/api/cart/test/ping` 返回 `200`。
+- 通过 Gateway 注册、登录并获取 token 成功。
+- 新增测试商品后，携带 token 调用 `POST /api/cart/add` 成功。
+- 重复加入同一商品复用同一 `cartItemId`，数量从 `1` 累加到 `2`，未新增重复记录。
+- `PUT /api/cart/update` 将数量改为 `3` 后，因测试商品库存为 `2`，返回 `stockInsufficient = true`。
+- `PUT /api/cart/check` 可将单个购物车项取消勾选，返回 `checked = 0`。
+- `PUT /api/cart/checkAll` 可全选当前用户购物车。
+- 商品下架后查询购物车返回 `offShelf = true`。
+- `DELETE /api/cart/checked` 可删除已勾选商品。
+- `DELETE /api/cart/{id}` 可删除单个购物车项。
+- 第二个测试用户查询购物车返回空列表，验证用户数据隔离。
+- 购物车列表返回商品 `mainImage`、`price`、`stock` 等来自商品服务的实时字段。

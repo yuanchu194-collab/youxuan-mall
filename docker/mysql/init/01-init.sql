@@ -60,3 +60,17 @@ CREATE TABLE IF NOT EXISTS product_stock (
     update_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     UNIQUE KEY uk_product_id (product_id)
 ) DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='商品库存表';
+
+CREATE TABLE IF NOT EXISTS cart_item (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT COMMENT '购物车项ID',
+    user_id BIGINT NOT NULL COMMENT '用户ID',
+    product_id BIGINT NOT NULL COMMENT '商品ID',
+    quantity INT NOT NULL DEFAULT 1 COMMENT '购买数量',
+    checked TINYINT NOT NULL DEFAULT 1 COMMENT '是否勾选 1勾选 0未勾选',
+    create_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    update_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    deleted TINYINT NOT NULL DEFAULT 0 COMMENT '逻辑删除',
+    UNIQUE KEY uk_user_product (user_id, product_id),
+    KEY idx_user_id (user_id),
+    KEY idx_product_id (product_id)
+) DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='购物车表';
