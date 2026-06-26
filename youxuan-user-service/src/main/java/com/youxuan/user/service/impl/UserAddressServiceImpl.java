@@ -88,6 +88,11 @@ public class UserAddressServiceImpl implements UserAddressService {
     }
 
     @Override
+    public AddressVO detail(Long id) {
+        return AddressVO.from(getCurrentUserAddress(id));
+    }
+
+    @Override
     public AddressVO getDefault() {
         Long userId = currentUserId();
         UserAddress address = userAddressMapper.selectOne(new LambdaQueryWrapper<UserAddress>()

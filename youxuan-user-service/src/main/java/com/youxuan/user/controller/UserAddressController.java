@@ -51,6 +51,11 @@ public class UserAddressController {
         return Result.success(userAddressService.list());
     }
 
+    @GetMapping("/{id:\\d+}")
+    public Result<AddressVO> detail(@PathVariable("id") Long id) {
+        return Result.success(userAddressService.detail(id));
+    }
+
     @GetMapping("/default")
     public Result<AddressVO> getDefault() {
         return Result.success(userAddressService.getDefault());

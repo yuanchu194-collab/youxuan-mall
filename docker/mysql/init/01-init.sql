@@ -90,3 +90,33 @@ CREATE TABLE IF NOT EXISTS user_address (
     deleted TINYINT NOT NULL DEFAULT 0 COMMENT '逻辑删除',
     KEY idx_user_id (user_id)
 ) DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='用户收货地址表';
+
+CREATE TABLE IF NOT EXISTS coupon (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT COMMENT '优惠券ID',
+    name VARCHAR(128) NOT NULL COMMENT '优惠券名称',
+    amount DECIMAL(10,2) NOT NULL COMMENT '优惠金额',
+    min_amount DECIMAL(10,2) NOT NULL DEFAULT 0 COMMENT '使用门槛',
+    total_stock INT NOT NULL COMMENT '总库存',
+    available_stock INT NOT NULL COMMENT '剩余库存',
+    start_time DATETIME NOT NULL COMMENT '开始时间',
+    end_time DATETIME NOT NULL COMMENT '结束时间',
+    status TINYINT NOT NULL DEFAULT 1 COMMENT '状态 1启用 0禁用',
+    create_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    update_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    deleted TINYINT NOT NULL DEFAULT 0 COMMENT '逻辑删除'
+) DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='优惠券表';
+
+CREATE TABLE IF NOT EXISTS user_coupon (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT COMMENT '用户优惠券ID',
+    user_id BIGINT NOT NULL COMMENT '用户ID',
+    coupon_id BIGINT NOT NULL COMMENT '优惠券ID',
+    status TINYINT NOT NULL DEFAULT 0 COMMENT '状态 0未使用 1已使用 2已过期',
+    receive_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '领取时间',
+    use_time DATETIME DEFAULT NULL COMMENT '使用时间',
+    order_id BIGINT DEFAULT NULL COMMENT '使用订单ID',
+    create_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    update_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uk_user_coupon (user_id, coupon_id),
+    KEY idx_user_id (user_id),
+    KEY idx_coupon_id (coupon_id)
+) DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='用户优惠券表';

@@ -18,6 +18,8 @@ public interface UserAddressService {
 
     List<AddressVO> list();
 
+    AddressVO detail(Long id);
+
     AddressVO getDefault();
 
     AddressVO setDefault(Long id);

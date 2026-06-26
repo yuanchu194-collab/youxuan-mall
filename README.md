@@ -1117,3 +1117,232 @@ Invoke-RestMethod -Method Delete -Uri "http://localhost:9000/api/user/address/$a
 - 第二个测试用户尝试修改第一个用户地址，返回统一 `Result` 业务码 `404`，提示 `收货地址不存在`。
 - 删除默认地址后，地址列表不再显示该地址，且不自动选择新的默认地址。
 - 本阶段未实现订单、优惠券、支付等后续阶段能力。
+
+## 阶段 13：优惠券服务与 Redis + Lua 抢券
+
+本阶段只完善 `youxuan-coupon-service` 的优惠券创建、分页、库存预热、Redis + Lua 领取、RabbitMQ 异步落库、我的优惠券和下单可用优惠券查询。不实现订单确认页、创建订单、支付、订单取消、发货、确认收货、首页运营、前端、Canal、Sentinel、Seata、秒杀，也未修改 `docker/docker-compose.yml`。
+
+### 数据库表
+
+新增表：
+
+- `coupon`
+- `user_coupon`
+
+建表 SQL 已追加到 `docker/mysql/init/01-init.sql`。如果本机 MySQL 容器已经初始化过数据卷，Docker 不会自动重新执行 init SQL，需要手动连接 `localhost:3307` 的 `youxuan_mall` 数据库执行这两张表的建表语句。
+
+### 启动依赖
+
+```powershell
+docker compose -f docker/docker-compose.yml up -d mysql nacos redis rabbitmq
+```
+
+启动服务：
+
+```powershell
+mvn -pl youxuan-user-service -am spring-boot:run
+mvn -pl youxuan-coupon-service -am spring-boot:run
+mvn -pl youxuan-gateway -am spring-boot:run
+```
+
+### 登录获取 Token
+
+```powershell
+$loginBody = @{
+  username = "testuser"
+  password = "123456"
+} | ConvertTo-Json
+
+$login = Invoke-RestMethod -Method Post -Uri http://localhost:9000/api/user/login -ContentType "application/json" -Body $loginBody
+$token = $login.data.token
+$headers = @{ Authorization = "Bearer $token" }
+```
+
+### 优惠券接口测试
+
+创建优惠券：
+
+```powershell
+$couponBody = @{
+  name = "新人满100减20"
+  amount = 20
+  minAmount = 100
+  totalStock = 100
+  availableStock = 100
+  startTime = "2026-06-26 00:00:00"
+  endTime = "2026-12-31 23:59:59"
+  status = 1
+} | ConvertTo-Json
+
+$coupon = Invoke-RestMethod -Method Post -Uri http://localhost:9000/api/coupon -Headers $headers -ContentType "application/json" -Body $couponBody
+$couponId = $coupon.data.id
+```
+
+分页查询：
+
+```powershell
+Invoke-RestMethod -Method Get -Uri "http://localhost:9000/api/coupon/page?pageNum=1&pageSize=10" -Headers $headers
+```
+
+预热库存到 Redis：
+
+```powershell
+Invoke-RestMethod -Method Post -Uri "http://localhost:9000/api/coupon/$couponId/preheat" -Headers $headers
+docker exec youxuan-redis redis-cli GET "youxuan:coupon:stock:$couponId"
+```
+
+领取优惠券：
+
+```powershell
+Invoke-RestMethod -Method Post -Uri "http://localhost:9000/api/coupon/$couponId/receive" -Headers $headers
+```
+
+查询我的优惠券：
+
+```powershell
+Invoke-RestMethod -Method Get -Uri http://localhost:9000/api/coupon/my -Headers $headers
+```
+
+查询下单可用优惠券：
+
+```powershell
+Invoke-RestMethod -Method Get -Uri "http://localhost:9000/api/coupon/available?amount=199" -Headers $headers
+```
+
+### 本阶段 Redis Key
+
+```text
+youxuan:coupon:stock:{couponId}
+youxuan:coupon:user:{couponId}
+```
+
+### 本阶段 RabbitMQ
+
+```text
+Exchange：youxuan.coupon.exchange
+Queue：youxuan.coupon.receive.queue
+RoutingKey：coupon.receive
+```
+
+### 本地验收记录
+
+验收日期：2026-06-26
+
+已验证内容：
+
+- `mvn -q -DskipTests package` 已验证通过。
+- Docker 中 `mysql`、`nacos`、`redis`、`rabbitmq` 均处于运行状态。
+- 既有 MySQL 数据卷不会自动重放 init SQL，本地验收前已手动执行 `coupon`、`user_coupon` 建表语句。
+- 临时启动 `youxuan-user-service`、`youxuan-coupon-service`、`youxuan-gateway` 后，Gateway 访问 `/api/coupon/test/ping` 返回 `200`。
+- 通过 Gateway 注册、登录并获取 token 成功。
+- 调用 `POST /api/coupon` 创建优惠券成功。
+- 调用 `GET /api/coupon/page` 分页查询可返回新建优惠券。
+- 调用 `POST /api/coupon/{id}/preheat` 成功，Redis 中 `youxuan:coupon:stock:{couponId}` 写入数据库剩余库存。
+- 调用 `POST /api/coupon/{id}/receive` 领取成功，Lua 会原子校验重复领取、库存、扣减 Redis 库存和记录已领取用户。
+- Redis 中 `youxuan:coupon:stock:{couponId}` 从 `1` 扣减为 `0`，`youxuan:coupon:user:{couponId}` 记录当前用户。
+- 重复领取返回统一 `Result` 业务码 `5000`，提示 `不能重复领取优惠券`。
+- 第二个用户在库存为 `0` 时领取返回统一 `Result` 业务码 `5000`，提示库存不足，验证不超卖。
+- RabbitMQ 领取消息已被 coupon-service 消费，`user_coupon` 表有领取记录。
+- `coupon.available_stock` 已从 `1` 扣减为 `0`。
+- 当前用户调用 `GET /api/coupon/my` 返回已领取优惠券，另一个用户返回空列表。
+- 当前用户调用 `GET /api/coupon/available?amount=199` 返回可用券，`amount=50` 返回空列表。
+- 本阶段未实现订单、支付、核销、恢复等后续阶段能力。
+
+## 阶段 14：订单确认页与价格结算
+
+本阶段只在 `youxuan-order-service` 中实现 `POST /api/order/confirm`，用于生成订单确认页展示数据和价格计算。不创建订单、不生成订单号、不扣库存、不核销优惠券、不恢复优惠券、不删除购物车、不支付、不取消订单、不处理发货收货，也未修改 `docker/docker-compose.yml`。
+
+### 启动依赖
+
+```powershell
+docker compose -f docker/docker-compose.yml up -d mysql nacos redis rabbitmq
+```
+
+启动服务：
+
+```powershell
+mvn -pl youxuan-user-service -am spring-boot:run
+mvn -pl youxuan-product-service -am spring-boot:run
+mvn -pl youxuan-coupon-service -am spring-boot:run
+mvn -pl youxuan-order-service -am spring-boot:run
+mvn -pl youxuan-gateway -am spring-boot:run
+```
+
+### 订单确认接口
+
+接口：
+
+```http
+POST http://localhost:9000/api/order/confirm
+Authorization: Bearer <token>
+Content-Type: application/json
+```
+
+BUY_NOW 示例：
+
+```powershell
+$confirmBody = @{
+  source = "BUY_NOW"
+  addressId = 1
+  couponId = 1
+  items = @(
+    @{
+      productId = 1
+      quantity = 2
+    }
+  )
+} | ConvertTo-Json -Depth 6
+
+Invoke-RestMethod -Method Post -Uri http://localhost:9000/api/order/confirm -Headers $headers -ContentType "application/json" -Body $confirmBody
+```
+
+CART 示例：
+
+```powershell
+$cartConfirmBody = @{
+  source = "CART"
+  addressId = 1
+  items = @(
+    @{
+      productId = 1
+      quantity = 1
+    }
+  )
+} | ConvertTo-Json -Depth 6
+
+Invoke-RestMethod -Method Post -Uri http://localhost:9000/api/order/confirm -Headers $headers -ContentType "application/json" -Body $cartConfirmBody
+```
+
+### 实现说明
+
+- `order-service` 通过 `UserContext` 获取当前用户 ID。
+- 通过 OpenFeign 调用 `product-service` 查询商品最新名称、图片、价格、库存、上下架状态。
+- 通过 OpenFeign 调用 `user-service` 查询当前用户的地址详情，并由 user-service 继续校验地址归属。
+- 通过 OpenFeign 调用 `coupon-service` 查询当前用户在订单金额下可用的优惠券。
+- `couponId` 为空时，`discountAmount = 0`。
+- `couponId` 不为空时，必须存在于当前用户可用优惠券列表，否则返回业务异常。
+- `payAmount = totalAmount - discountAmount`，最低为 `0`。
+
+### 本地验收记录
+
+验收日期：2026-06-26
+
+已验证内容：
+
+- `mvn -q -DskipTests package` 已验证通过。
+- Docker 中 `mysql`、`nacos`、`redis`、`rabbitmq` 均处于运行状态。
+- 临时启动 `youxuan-user-service`、`youxuan-product-service`、`youxuan-coupon-service`、`youxuan-order-service`、`youxuan-gateway` 后，Gateway 访问 `/api/order/test/ping` 返回 `200`。
+- 通过 Gateway 注册、登录并获取 token 成功。
+- 准备测试商品、收货地址、已领取优惠券后，`BUY_NOW` 模式确认订单成功。
+- `couponId` 为空时，`totalAmount = 398.00`、`discountAmount = 0`、`payAmount = 398.00`。
+- `couponId` 有效时，`discountAmount = 20.00`、`payAmount = 378.00`。
+- `CART` 模式确认订单成功，本阶段仅使用请求中的 items 计算，不删除购物车。
+- 响应中返回商品名称、图片、价格、数量、小计、库存、状态。
+- 响应中返回收货地址、可用优惠券列表和选中优惠券。
+- 商品库存不足时返回统一 `Result` 业务码 `5000`，提示 `商品库存不足`。
+- 地址不存在时返回统一 `Result` 业务码 `404`，提示 `收货地址不存在`。
+- 优惠券不可用时返回统一 `Result` 业务码 `5000`，提示 `优惠券不可用`。
+- 商品下架后确认订单返回统一 `Result` 业务码 `5000`，提示 `商品已下架`。
+- 确认前后 `product_stock.stock` 保持不变，未扣减库存。
+- 确认前后 `user_coupon.status` 保持 `0`，未核销优惠券。
+- 本阶段未创建 `mall_order` 和 `mall_order_item` 数据；本地库中这两张表也未被本阶段创建。
