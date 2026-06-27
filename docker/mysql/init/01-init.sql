@@ -160,3 +160,32 @@ CREATE TABLE IF NOT EXISTS mall_order_item (
     KEY idx_order_id (order_id),
     KEY idx_product_id (product_id)
 ) DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='订单明细表';
+
+CREATE TABLE IF NOT EXISTS home_banner (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT COMMENT 'Banner ID',
+    title VARCHAR(128) NOT NULL COMMENT '标题',
+    image_url VARCHAR(255) NOT NULL COMMENT '图片URL',
+    link_type VARCHAR(32) DEFAULT NULL COMMENT '跳转类型 PRODUCT/CATEGORY/URL/NONE',
+    link_value VARCHAR(255) DEFAULT NULL COMMENT '跳转目标',
+    sort INT NOT NULL DEFAULT 0 COMMENT '排序',
+    status TINYINT NOT NULL DEFAULT 1 COMMENT '状态 1启用 0禁用',
+    start_time DATETIME DEFAULT NULL COMMENT '展示开始时间',
+    end_time DATETIME DEFAULT NULL COMMENT '展示结束时间',
+    create_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    update_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    deleted TINYINT NOT NULL DEFAULT 0 COMMENT '逻辑删除',
+    KEY idx_status_sort (status, sort)
+) DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='首页Banner表';
+
+CREATE TABLE IF NOT EXISTS home_recommend (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT COMMENT '推荐位ID',
+    title VARCHAR(128) NOT NULL COMMENT '推荐标题',
+    product_id BIGINT NOT NULL COMMENT '商品ID',
+    sort INT NOT NULL DEFAULT 0 COMMENT '排序',
+    status TINYINT NOT NULL DEFAULT 1 COMMENT '状态 1启用 0禁用',
+    create_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    update_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    deleted TINYINT NOT NULL DEFAULT 0 COMMENT '逻辑删除',
+    KEY idx_product_id (product_id),
+    KEY idx_status_sort (status, sort)
+) DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='首页推荐商品表';

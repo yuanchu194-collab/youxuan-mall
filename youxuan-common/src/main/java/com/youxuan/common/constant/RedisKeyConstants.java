@@ -14,6 +14,7 @@ public final class RedisKeyConstants {
     public static final String ORDER_SUBMIT = "youxuan:order:submit:";
     public static final String CART = "youxuan:cart:";
     public static final String ADDRESS_DEFAULT = "youxuan:address:default:";
+    public static final String HOME_INDEX = "youxuan:home:index";
     public static final String HOME_BANNERS = "youxuan:home:banners";
     public static final String HOME_RECOMMEND_PRODUCTS = "youxuan:home:recommend-products";
 

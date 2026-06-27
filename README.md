@@ -1665,3 +1665,185 @@ Authorization: Bearer <user-token>
 - 已取消订单确认收货返回业务码 `5000`，提示 `已取消订单不能确认收货`。
 - 本阶段未实现首页运营、前端、搜索增强、优惠券新增能力、支付新增能力、Canal、Sentinel、Seata、秒杀。
 - 本阶段未修改 `docker/docker-compose.yml`。
+
+## 阶段 18：首页 Banner 与推荐位
+
+本阶段完善 `youxuan-home-service`：实现首页 Banner 管理、首页推荐位管理和首页聚合接口。首页聚合接口通过 OpenFeign 调用 `youxuan-product-service` 获取分类、热门商品和推荐商品详情，返回 `banners`、`categories`、`hotProducts`、`recommendProducts`。首页聚合、Banner 列表和推荐商品列表使用 Redis 缓存，Banner 或推荐位变更后删除相关首页缓存。
+
+本阶段不实现前端、Canal、Sentinel、Seata、秒杀、搜索增强、订单新增能力、优惠券新增能力、支付新增能力，也未修改 `docker/docker-compose.yml`。
+
+### 环境说明
+
+当前机器 8848 在 Windows TCP 排除范围内，启动服务时统一追加：
+
+```powershell
+--spring.cloud.nacos.discovery.server-addr=localhost:18848
+```
+
+不要启动 `docker/docker-compose.yml` 中映射 8848 的 Nacos 容器。
+
+### 数据库表
+
+本阶段使用 `home_banner` 和 `home_recommend` 表，建表 SQL 已补充到 `docker/mysql/init/01-init.sql`。
+
+已有 MySQL 数据卷不会自动重新执行 init SQL，需要手动执行：
+
+```sql
+CREATE TABLE IF NOT EXISTS home_banner (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT COMMENT 'Banner ID',
+    title VARCHAR(128) NOT NULL COMMENT '标题',
+    image_url VARCHAR(255) NOT NULL COMMENT '图片URL',
+    link_type VARCHAR(32) DEFAULT NULL COMMENT '跳转类型 PRODUCT/CATEGORY/URL/NONE',
+    link_value VARCHAR(255) DEFAULT NULL COMMENT '跳转目标',
+    sort INT NOT NULL DEFAULT 0 COMMENT '排序',
+    status TINYINT NOT NULL DEFAULT 1 COMMENT '状态 1启用 0禁用',
+    start_time DATETIME DEFAULT NULL COMMENT '展示开始时间',
+    end_time DATETIME DEFAULT NULL COMMENT '展示结束时间',
+    create_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    update_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    deleted TINYINT NOT NULL DEFAULT 0 COMMENT '逻辑删除',
+    KEY idx_status_sort (status, sort)
+) DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='首页Banner表';
+
+CREATE TABLE IF NOT EXISTS home_recommend (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT COMMENT '推荐位ID',
+    title VARCHAR(128) NOT NULL COMMENT '推荐标题',
+    product_id BIGINT NOT NULL COMMENT '商品ID',
+    sort INT NOT NULL DEFAULT 0 COMMENT '排序',
+    status TINYINT NOT NULL DEFAULT 1 COMMENT '状态 1启用 0禁用',
+    create_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    update_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    deleted TINYINT NOT NULL DEFAULT 0 COMMENT '逻辑删除',
+    KEY idx_product_id (product_id),
+    KEY idx_status_sort (status, sort)
+) DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='首页推荐商品表';
+```
+
+### 启动依赖
+
+```powershell
+docker compose -f docker/docker-compose.yml up -d mysql redis
+```
+
+如未启动临时 Nacos，可使用 18848 端口启动：
+
+```powershell
+docker run -d --name youxuan-nacos-stage18 -e MODE=standalone -e TZ=Asia/Shanghai -p 18848:8848 -p 19848:9848 -p 19849:9849 --network youxuan-mall-net nacos/nacos-server:v2.2.3
+```
+
+启动服务时追加 Nacos 参数：
+
+```powershell
+mvn -pl youxuan-user-service -am spring-boot:run -Dspring-boot.run.arguments="--spring.cloud.nacos.discovery.server-addr=localhost:18848"
+mvn -pl youxuan-product-service -am spring-boot:run -Dspring-boot.run.arguments="--spring.cloud.nacos.discovery.server-addr=localhost:18848"
+mvn -pl youxuan-home-service -am spring-boot:run -Dspring-boot.run.arguments="--spring.cloud.nacos.discovery.server-addr=localhost:18848"
+mvn -pl youxuan-gateway -am spring-boot:run -Dspring-boot.run.arguments="--spring.cloud.nacos.discovery.server-addr=localhost:18848"
+```
+
+### 首页运营接口
+
+所有接口通过 Gateway 访问：
+
+```text
+http://localhost:9000
+```
+
+新增 Banner：
+
+```http
+POST /api/home/banner
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "title": "夏日优选",
+  "imageUrl": "http://localhost:9100/youxuan-mall/products/2026/06/demo.jpg",
+  "linkType": "PRODUCT",
+  "linkValue": "1",
+  "sort": 1,
+  "status": 1
+}
+```
+
+修改 Banner：
+
+```http
+PUT /api/home/banner/{id}
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "title": "夏日优选升级",
+  "imageUrl": "http://localhost:9100/youxuan-mall/products/2026/06/demo.jpg",
+  "linkType": "PRODUCT",
+  "linkValue": "1",
+  "sort": 1,
+  "status": 1
+}
+```
+
+查询 Banner 列表：
+
+```http
+GET /api/home/banner/list
+Authorization: Bearer <token>
+```
+
+删除 Banner：
+
+```http
+DELETE /api/home/banner/{id}
+Authorization: Bearer <token>
+```
+
+新增推荐商品：
+
+```http
+POST /api/home/recommend
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "title": "编辑精选",
+  "productId": 1,
+  "sort": 1,
+  "status": 1
+}
+```
+
+删除推荐商品：
+
+```http
+DELETE /api/home/recommend/{id}
+Authorization: Bearer <token>
+```
+
+首页聚合：
+
+```http
+GET /api/home/index
+Authorization: Bearer <token>
+```
+
+返回结构：
+
+```json
+{
+  "banners": [],
+  "categories": [],
+  "hotProducts": [],
+  "recommendProducts": []
+}
+```
+
+### 缓存说明
+
+使用的 Redis key：
+
+```text
+youxuan:home:index
+youxuan:home:banners
+youxuan:home:recommend-products
+```
+
+缓存过期时间为 30 分钟。第二次访问 `GET /api/home/index` 会优先命中 `youxuan:home:index`，新增、修改、删除 Banner 会删除首页聚合和 Banner 缓存；新增、删除推荐位会删除首页聚合和推荐商品缓存。
