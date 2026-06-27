@@ -10,6 +10,8 @@ import com.youxuan.common.message.CouponReceiveMessage;
 import com.youxuan.common.result.ErrorCode;
 import com.youxuan.common.result.PageResult;
 import com.youxuan.coupon.dto.CouponCreateRequest;
+import com.youxuan.coupon.dto.CouponRestoreRequest;
+import com.youxuan.coupon.dto.CouponUseRequest;
 import com.youxuan.coupon.entity.Coupon;
 import com.youxuan.coupon.entity.UserCoupon;
 import com.youxuan.coupon.mapper.CouponMapper;
@@ -39,6 +41,7 @@ public class CouponServiceImpl implements CouponService {
 
     private static final int STATUS_ENABLED = 1;
     private static final int USER_COUPON_UNUSED = 0;
+    private static final int USER_COUPON_USED = 1;
     private static final long LUA_SUCCESS = 0L;
     private static final long LUA_STOCK_EMPTY = 1L;
     private static final long LUA_DUPLICATE_RECEIVE = 2L;
@@ -169,6 +172,53 @@ public class CouponServiceImpl implements CouponService {
                         && !coupon.getEndTime().isBefore(now))
                 .map(CouponVO::from)
                 .toList();
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void use(CouponUseRequest request) {
+        Long userId = currentUserId();
+        Coupon coupon = getValidCoupon(request.getCouponId());
+        if (coupon.getMinAmount().compareTo(request.getOrderAmount()) > 0) {
+            throw new BusinessException(ErrorCode.BUSINESS_ERROR, "订单金额未满足优惠券使用门槛");
+        }
+        UserCoupon userCoupon = userCouponMapper.selectOne(new LambdaQueryWrapper<UserCoupon>()
+                .eq(UserCoupon::getUserId, userId)
+                .eq(UserCoupon::getCouponId, request.getCouponId())
+                .last("LIMIT 1"));
+        if (userCoupon == null) {
+            throw new BusinessException(ErrorCode.NOT_FOUND, "用户优惠券不存在");
+        }
+        if (!Integer.valueOf(USER_COUPON_UNUSED).equals(userCoupon.getStatus())) {
+            throw new BusinessException(ErrorCode.BUSINESS_ERROR, "优惠券不可用");
+        }
+        int updated = userCouponMapper.update(null, new LambdaUpdateWrapper<UserCoupon>()
+                .eq(UserCoupon::getId, userCoupon.getId())
+                .eq(UserCoupon::getUserId, userId)
+                .eq(UserCoupon::getStatus, USER_COUPON_UNUSED)
+                .set(UserCoupon::getStatus, USER_COUPON_USED)
+                .set(UserCoupon::getUseTime, LocalDateTime.now())
+                .set(UserCoupon::getOrderId, request.getOrderId()));
+        if (updated == 0) {
+            throw new BusinessException(ErrorCode.BUSINESS_ERROR, "优惠券核销失败");
+        }
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void restore(CouponRestoreRequest request) {
+        Long userId = currentUserId();
+        int updated = userCouponMapper.update(null, new LambdaUpdateWrapper<UserCoupon>()
+                .eq(UserCoupon::getUserId, userId)
+                .eq(UserCoupon::getCouponId, request.getCouponId())
+                .eq(UserCoupon::getOrderId, request.getOrderId())
+                .eq(UserCoupon::getStatus, USER_COUPON_USED)
+                .set(UserCoupon::getStatus, USER_COUPON_UNUSED)
+                .set(UserCoupon::getUseTime, null)
+                .set(UserCoupon::getOrderId, null));
+        if (updated == 0) {
+            throw new BusinessException(ErrorCode.BUSINESS_ERROR, "优惠券恢复失败");
+        }
     }
 
     @Override

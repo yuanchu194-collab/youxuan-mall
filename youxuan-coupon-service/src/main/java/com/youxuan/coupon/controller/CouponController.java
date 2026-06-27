@@ -3,6 +3,8 @@ package com.youxuan.coupon.controller;
 import com.youxuan.common.result.PageResult;
 import com.youxuan.common.result.Result;
 import com.youxuan.coupon.dto.CouponCreateRequest;
+import com.youxuan.coupon.dto.CouponRestoreRequest;
+import com.youxuan.coupon.dto.CouponUseRequest;
 import com.youxuan.coupon.service.CouponService;
 import com.youxuan.coupon.vo.CouponVO;
 import com.youxuan.coupon.vo.UserCouponVO;
@@ -62,5 +64,17 @@ public class CouponController {
     @GetMapping("/available")
     public Result<List<CouponVO>> availableCoupons(@RequestParam("amount") BigDecimal amount) {
         return Result.success(couponService.availableCoupons(amount));
+    }
+
+    @PostMapping(value = "/use", consumes = MediaType.APPLICATION_JSON_VALUE)
+    public Result<Void> use(@Valid @RequestBody CouponUseRequest request) {
+        couponService.use(request);
+        return Result.success();
+    }
+
+    @PostMapping(value = "/restore", consumes = MediaType.APPLICATION_JSON_VALUE)
+    public Result<Void> restore(@Valid @RequestBody CouponRestoreRequest request) {
+        couponService.restore(request);
+        return Result.success();
     }
 }

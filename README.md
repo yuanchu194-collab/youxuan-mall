@@ -1346,3 +1346,129 @@ Invoke-RestMethod -Method Post -Uri http://localhost:9000/api/order/confirm -Hea
 - 确认前后 `product_stock.stock` 保持不变，未扣减库存。
 - 确认前后 `user_coupon.status` 保持 `0`，未核销优惠券。
 - 本阶段未创建 `mall_order` 和 `mall_order_item` 数据；本地库中这两张表也未被本阶段创建。
+
+## 阶段 15：订单服务、下单、防重复提交
+
+本阶段在 `youxuan-order-service` 中实现创建待支付订单、订单详情查询和我的订单分页查询。创建订单时会重新查询商品、地址和优惠券，不信任阶段 14 确认页结果；会扣减商品库存、核销优惠券、保存收货地址快照，并使用 Redis `SETNX` 防止短时间重复提交。本阶段不实现支付、取消订单、订单超时取消消费者、发货、确认收货，也未修改 `docker/docker-compose.yml`。
+
+### 数据库表
+
+已在 `docker/mysql/init/01-init.sql` 追加：
+
+- `mall_order`
+- `mall_order_item`
+
+已有 MySQL 数据卷不会自动重新执行 init SQL，需要手动执行本阶段新增的两张订单表建表语句。
+
+### 启动依赖
+
+```powershell
+docker compose -f docker/docker-compose.yml up -d mysql nacos redis rabbitmq
+```
+
+启动服务：
+
+```powershell
+mvn -pl youxuan-user-service -am spring-boot:run
+mvn -pl youxuan-product-service -am spring-boot:run
+mvn -pl youxuan-coupon-service -am spring-boot:run
+mvn -pl youxuan-cart-service -am spring-boot:run
+mvn -pl youxuan-order-service -am spring-boot:run
+mvn -pl youxuan-gateway -am spring-boot:run
+```
+
+### 订单接口
+
+创建订单：
+
+```http
+POST http://localhost:9000/api/order
+Authorization: Bearer <token>
+Content-Type: application/json
+```
+
+BUY_NOW 示例：
+
+```powershell
+$orderBody = @{
+  source = "BUY_NOW"
+  addressId = 1
+  couponId = 1
+  items = @(
+    @{
+      productId = 1
+      quantity = 2
+    }
+  )
+} | ConvertTo-Json -Depth 6
+
+Invoke-RestMethod -Method Post -Uri http://localhost:9000/api/order -Headers $headers -ContentType "application/json" -Body $orderBody
+```
+
+CART 示例：
+
+```powershell
+$cartOrderBody = @{
+  source = "CART"
+  addressId = 1
+  items = @(
+    @{
+      productId = 1
+      quantity = 1
+    }
+  )
+} | ConvertTo-Json -Depth 6
+
+Invoke-RestMethod -Method Post -Uri http://localhost:9000/api/order -Headers $headers -ContentType "application/json" -Body $cartOrderBody
+```
+
+查询订单详情：
+
+```powershell
+Invoke-RestMethod -Method Get -Uri "http://localhost:9000/api/order/1" -Headers $headers
+```
+
+查询我的订单：
+
+```powershell
+Invoke-RestMethod -Method Get -Uri "http://localhost:9000/api/order/my?pageNum=1&pageSize=10" -Headers $headers
+```
+
+### 实现说明
+
+- 创建订单通过 `UserContext` 获取当前用户 ID。
+- 防重复提交 Key：`youxuan:order:submit:{userId}:{productId}`，过期时间 10 秒。
+- 商品名称、图片、价格、库存、上下架状态均通过 `product-service` 实时查询。
+- 创建订单时调用 `product-service` 的 `/stock/deduct` 扣减库存；失败时调用 `/stock/restore` 补偿已扣减库存。
+- 使用优惠券时调用 `coupon-service` 的 `/use` 核销优惠券；后续失败时调用 `/restore` 恢复优惠券。
+- 收货地址通过 `user-service` 查询，并在 `mall_order` 保存 `receiver_name`、`receiver_phone`、`receiver_address` 快照。
+- `mall_order.status` 初始固定为 `0`，表示待支付。
+- 查询订单详情和我的订单分页只返回当前用户自己的订单。
+- `source = CART` 创建成功后，会在事务提交后调用 `cart-service` 删除当前用户已勾选购物车项。
+
+### 本地验收记录
+
+验收日期：2026-06-27
+
+已验证内容：
+
+- `mvn -q -DskipTests package` 已验证通过。
+- 当前机器 8848 端口位于 Windows TCP 排除范围内，Compose 中的 Nacos 无法绑定 8848；本次验收未修改 `docker/docker-compose.yml`，临时使用 `youxuan-nacos-stage15` 容器映射 `18848:8848`，并通过启动参数覆盖各服务 Nacos 地址为 `localhost:18848`。
+- 已手动执行 `docker/mysql/init/01-init.sql`，确认 `mall_order` 和 `mall_order_item` 表存在。
+- Gateway 访问 `/api/user/test/ping`、`/api/product/test/ping`、`/api/coupon/test/ping`、`/api/cart/test/ping`、`/api/order/test/ping` 均返回 `200`。
+- 登录后 `BUY_NOW` 模式创建订单成功，`mall_order` 和 `mall_order_item` 均写入记录。
+- 新建订单状态为 `0` 待支付。
+- 创建订单后 `product_stock.stock` 从 `8` 扣减为 `6`，`locked_stock` 从 `0` 增加为 `2`。
+- 使用优惠券下单后，`totalAmount = 398.00`、`discountAmount = 20.00`、`payAmount = 378.00`。
+- 使用优惠券后 `user_coupon.status = 1`，并写入对应 `order_id`。
+- 创建订单时已保存收货地址快照；通过 `HEX(receiver_name)` 确认中文收货人真实保存为 UTF-8，终端中显示 `??` 是 Docker/MySQL 输出到 PowerShell 的显示编码问题。
+- 快速重复提交同一商品订单返回业务码 `5000`，提示 `请勿重复提交订单`。
+- `GET /api/order/{id}` 当前用户查询成功，其他用户查询同一订单返回 `404`。
+- `GET /api/order/my?pageNum=1&pageSize=10` 可以返回当前用户订单分页。
+- `CART` 模式创建订单成功，库存正常扣减。
+- `CART` 模式创建订单成功后，已勾选购物车项被删除。
+- 商品库存不足时创建订单失败，返回 `商品库存不足`。
+- 商品下架时创建订单失败，返回 `商品已下架`。
+- 优惠券不可用时创建订单失败，返回 `优惠券不可用`。
+- 本阶段代码未实现支付、取消订单、订单超时取消消费者、发货、确认收货。
+- 本阶段未修改 `docker/docker-compose.yml`。

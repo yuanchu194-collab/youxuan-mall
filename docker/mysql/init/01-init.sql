@@ -120,3 +120,43 @@ CREATE TABLE IF NOT EXISTS user_coupon (
     KEY idx_user_id (user_id),
     KEY idx_coupon_id (coupon_id)
 ) DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='用户优惠券表';
+
+CREATE TABLE IF NOT EXISTS mall_order (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT COMMENT '订单ID',
+    order_no VARCHAR(64) NOT NULL COMMENT '订单编号',
+    user_id BIGINT NOT NULL COMMENT '用户ID',
+    total_amount DECIMAL(10,2) NOT NULL COMMENT '订单总金额',
+    discount_amount DECIMAL(10,2) NOT NULL DEFAULT 0 COMMENT '优惠金额',
+    pay_amount DECIMAL(10,2) NOT NULL COMMENT '实付金额',
+    status TINYINT NOT NULL DEFAULT 0 COMMENT '状态 0待支付 1待发货 2待收货 3已完成 4已取消',
+    coupon_id BIGINT DEFAULT NULL COMMENT '优惠券ID',
+    receiver_name VARCHAR(64) DEFAULT NULL COMMENT '收货人姓名',
+    receiver_phone VARCHAR(20) DEFAULT NULL COMMENT '收货人手机号',
+    receiver_address VARCHAR(512) DEFAULT NULL COMMENT '收货完整地址快照',
+    pay_time DATETIME DEFAULT NULL COMMENT '支付时间',
+    cancel_time DATETIME DEFAULT NULL COMMENT '取消时间',
+    delivery_company VARCHAR(64) DEFAULT NULL COMMENT '物流公司',
+    tracking_no VARCHAR(64) DEFAULT NULL COMMENT '物流单号',
+    delivery_time DATETIME DEFAULT NULL COMMENT '发货时间',
+    receive_time DATETIME DEFAULT NULL COMMENT '确认收货时间',
+    create_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    update_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    deleted TINYINT NOT NULL DEFAULT 0 COMMENT '逻辑删除',
+    UNIQUE KEY uk_order_no (order_no),
+    KEY idx_user_id (user_id),
+    KEY idx_status (status)
+) DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='订单表';
+
+CREATE TABLE IF NOT EXISTS mall_order_item (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT COMMENT '订单明细ID',
+    order_id BIGINT NOT NULL COMMENT '订单ID',
+    product_id BIGINT NOT NULL COMMENT '商品ID',
+    product_name VARCHAR(128) NOT NULL COMMENT '商品名称',
+    product_image VARCHAR(255) DEFAULT NULL COMMENT '商品图片',
+    price DECIMAL(10,2) NOT NULL COMMENT '下单单价',
+    quantity INT NOT NULL COMMENT '购买数量',
+    total_amount DECIMAL(10,2) NOT NULL COMMENT '小计金额',
+    create_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    KEY idx_order_id (order_id),
+    KEY idx_product_id (product_id)
+) DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='订单明细表';
