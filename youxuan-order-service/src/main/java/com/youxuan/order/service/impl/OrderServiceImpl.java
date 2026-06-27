@@ -22,6 +22,7 @@ import com.youxuan.order.client.vo.ProductClientVO;
 import com.youxuan.order.client.vo.UserAddressClientVO;
 import com.youxuan.order.dto.OrderCreateItemRequest;
 import com.youxuan.order.dto.OrderCreateRequest;
+import com.youxuan.order.dto.OrderShipRequest;
 import com.youxuan.order.entity.MallOrder;
 import com.youxuan.order.entity.MallOrderItem;
 import com.youxuan.order.mapper.MallOrderItemMapper;
@@ -48,7 +49,7 @@ import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 /**
- * 订单服务实现。当前阶段实现创建、模拟支付、取消和超时取消，不实现发货和确认收货。
+ * 订单服务实现，覆盖下单、支付、取消、发货和确认收货主链路。
  */
 @Service
 public class OrderServiceImpl implements OrderService {
@@ -57,8 +58,11 @@ public class OrderServiceImpl implements OrderService {
 
     private static final String SOURCE_CART = "CART";
     private static final String SOURCE_BUY_NOW = "BUY_NOW";
+    private static final String ROLE_ADMIN = "ADMIN";
     private static final int ORDER_STATUS_WAIT_PAY = 0;
     private static final int ORDER_STATUS_WAIT_DELIVERY = 1;
+    private static final int ORDER_STATUS_WAIT_RECEIVE = 2;
+    private static final int ORDER_STATUS_COMPLETED = 3;
     private static final int ORDER_STATUS_CANCELED = 4;
     private static final int PRODUCT_ON = 1;
     private static final int SUCCESS_CODE = 200;
@@ -164,6 +168,10 @@ public class OrderServiceImpl implements OrderService {
         if (order == null) {
             throw new BusinessException(ErrorCode.NOT_FOUND, "订单不存在");
         }
+        return buildDetailVO(order);
+    }
+
+    private OrderDetailVO buildDetailVO(MallOrder order) {
         List<OrderItemVO> items = mallOrderItemMapper.selectList(new LambdaQueryWrapper<MallOrderItem>()
                         .eq(MallOrderItem::getOrderId, order.getId())
                         .orderByAsc(MallOrderItem::getId))
@@ -219,6 +227,47 @@ public class OrderServiceImpl implements OrderService {
         Long userId = currentUserId();
         MallOrder order = getCurrentUserOrder(id, userId);
         cancelWaitPayOrder(order, userId, currentRole(), true);
+        return detail(order.getId());
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public OrderDetailVO ship(Long id, OrderShipRequest request) {
+        if (!ROLE_ADMIN.equals(currentRole())) {
+            throw new BusinessException(ErrorCode.FORBIDDEN, "无发货权限");
+        }
+        MallOrder order = getOrderById(id);
+        validateCanShip(order);
+        LocalDateTime now = LocalDateTime.now();
+        int updated = mallOrderMapper.update(null, new LambdaUpdateWrapper<MallOrder>()
+                .eq(MallOrder::getId, order.getId())
+                .eq(MallOrder::getStatus, ORDER_STATUS_WAIT_DELIVERY)
+                .set(MallOrder::getStatus, ORDER_STATUS_WAIT_RECEIVE)
+                .set(MallOrder::getDeliveryCompany, request.getDeliveryCompany())
+                .set(MallOrder::getTrackingNo, request.getTrackingNo())
+                .set(MallOrder::getDeliveryTime, now));
+        if (updated == 0) {
+            throw new BusinessException(ErrorCode.BUSINESS_ERROR, "订单发货失败，请刷新后重试");
+        }
+        MallOrder updatedOrder = getOrderById(order.getId());
+        return buildDetailVO(updatedOrder);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public OrderDetailVO receive(Long id) {
+        Long userId = currentUserId();
+        MallOrder order = getCurrentUserOrder(id, userId);
+        validateCanReceive(order);
+        int updated = mallOrderMapper.update(null, new LambdaUpdateWrapper<MallOrder>()
+                .eq(MallOrder::getId, order.getId())
+                .eq(MallOrder::getUserId, userId)
+                .eq(MallOrder::getStatus, ORDER_STATUS_WAIT_RECEIVE)
+                .set(MallOrder::getStatus, ORDER_STATUS_COMPLETED)
+                .set(MallOrder::getReceiveTime, LocalDateTime.now()));
+        if (updated == 0) {
+            throw new BusinessException(ErrorCode.BUSINESS_ERROR, "确认收货失败，请刷新后重试");
+        }
         return detail(order.getId());
     }
 
@@ -406,6 +455,52 @@ public class OrderServiceImpl implements OrderService {
             throw new BusinessException(ErrorCode.NOT_FOUND, "订单不存在");
         }
         return order;
+    }
+
+    private MallOrder getOrderById(Long id) {
+        if (id == null) {
+            throw new BusinessException(ErrorCode.PARAM_ERROR, "订单ID不能为空");
+        }
+        MallOrder order = mallOrderMapper.selectById(id);
+        if (order == null) {
+            throw new BusinessException(ErrorCode.NOT_FOUND, "订单不存在");
+        }
+        return order;
+    }
+
+    private void validateCanShip(MallOrder order) {
+        if (Integer.valueOf(ORDER_STATUS_WAIT_DELIVERY).equals(order.getStatus())) {
+            return;
+        }
+        if (Integer.valueOf(ORDER_STATUS_WAIT_PAY).equals(order.getStatus())) {
+            throw new BusinessException(ErrorCode.BUSINESS_ERROR, "待支付订单不能发货");
+        }
+        if (Integer.valueOf(ORDER_STATUS_CANCELED).equals(order.getStatus())) {
+            throw new BusinessException(ErrorCode.BUSINESS_ERROR, "已取消订单不能发货");
+        }
+        if (Integer.valueOf(ORDER_STATUS_COMPLETED).equals(order.getStatus())) {
+            throw new BusinessException(ErrorCode.BUSINESS_ERROR, "已完成订单不能发货");
+        }
+        throw new BusinessException(ErrorCode.BUSINESS_ERROR, "订单状态不允许发货");
+    }
+
+    private void validateCanReceive(MallOrder order) {
+        if (Integer.valueOf(ORDER_STATUS_WAIT_RECEIVE).equals(order.getStatus())) {
+            return;
+        }
+        if (Integer.valueOf(ORDER_STATUS_WAIT_PAY).equals(order.getStatus())) {
+            throw new BusinessException(ErrorCode.BUSINESS_ERROR, "待支付订单不能确认收货");
+        }
+        if (Integer.valueOf(ORDER_STATUS_WAIT_DELIVERY).equals(order.getStatus())) {
+            throw new BusinessException(ErrorCode.BUSINESS_ERROR, "待发货订单不能确认收货");
+        }
+        if (Integer.valueOf(ORDER_STATUS_CANCELED).equals(order.getStatus())) {
+            throw new BusinessException(ErrorCode.BUSINESS_ERROR, "已取消订单不能确认收货");
+        }
+        if (Integer.valueOf(ORDER_STATUS_COMPLETED).equals(order.getStatus())) {
+            throw new BusinessException(ErrorCode.BUSINESS_ERROR, "订单已完成");
+        }
+        throw new BusinessException(ErrorCode.BUSINESS_ERROR, "订单状态不允许确认收货");
     }
 
     private void validateDuplicateProducts(List<OrderCreateItemRequest> items) {

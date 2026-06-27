@@ -21,6 +21,12 @@ public class OrderDetailVO {
     private String receiverName;
     private String receiverPhone;
     private String receiverAddress;
+    private LocalDateTime payTime;
+    private LocalDateTime cancelTime;
+    private String deliveryCompany;
+    private String trackingNo;
+    private LocalDateTime deliveryTime;
+    private LocalDateTime receiveTime;
     private LocalDateTime createTime;
     private List<OrderItemVO> items;
 
@@ -37,6 +43,12 @@ public class OrderDetailVO {
         vo.setReceiverName(order.getReceiverName());
         vo.setReceiverPhone(order.getReceiverPhone());
         vo.setReceiverAddress(order.getReceiverAddress());
+        vo.setPayTime(order.getPayTime());
+        vo.setCancelTime(order.getCancelTime());
+        vo.setDeliveryCompany(order.getDeliveryCompany());
+        vo.setTrackingNo(order.getTrackingNo());
+        vo.setDeliveryTime(order.getDeliveryTime());
+        vo.setReceiveTime(order.getReceiveTime());
         vo.setCreateTime(order.getCreateTime());
         vo.setItems(items);
         return vo;
@@ -128,6 +140,54 @@ public class OrderDetailVO {
 
     public void setReceiverAddress(String receiverAddress) {
         this.receiverAddress = receiverAddress;
+    }
+
+    public LocalDateTime getPayTime() {
+        return payTime;
+    }
+
+    public void setPayTime(LocalDateTime payTime) {
+        this.payTime = payTime;
+    }
+
+    public LocalDateTime getCancelTime() {
+        return cancelTime;
+    }
+
+    public void setCancelTime(LocalDateTime cancelTime) {
+        this.cancelTime = cancelTime;
+    }
+
+    public String getDeliveryCompany() {
+        return deliveryCompany;
+    }
+
+    public void setDeliveryCompany(String deliveryCompany) {
+        this.deliveryCompany = deliveryCompany;
+    }
+
+    public String getTrackingNo() {
+        return trackingNo;
+    }
+
+    public void setTrackingNo(String trackingNo) {
+        this.trackingNo = trackingNo;
+    }
+
+    public LocalDateTime getDeliveryTime() {
+        return deliveryTime;
+    }
+
+    public void setDeliveryTime(LocalDateTime deliveryTime) {
+        this.deliveryTime = deliveryTime;
+    }
+
+    public LocalDateTime getReceiveTime() {
+        return receiveTime;
+    }
+
+    public void setReceiveTime(LocalDateTime receiveTime) {
+        this.receiveTime = receiveTime;
     }
 
     public LocalDateTime getCreateTime() {

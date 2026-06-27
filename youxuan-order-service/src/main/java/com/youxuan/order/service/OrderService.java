@@ -3,6 +3,7 @@ package com.youxuan.order.service;
 import com.youxuan.common.result.PageResult;
 import com.youxuan.common.message.OrderTimeoutMessage;
 import com.youxuan.order.dto.OrderCreateRequest;
+import com.youxuan.order.dto.OrderShipRequest;
 import com.youxuan.order.vo.OrderDetailVO;
 import com.youxuan.order.vo.OrderPageVO;
 
@@ -20,6 +21,10 @@ public interface OrderService {
     OrderDetailVO pay(Long id);
 
     OrderDetailVO cancel(Long id);
+
+    OrderDetailVO ship(Long id, OrderShipRequest request);
+
+    OrderDetailVO receive(Long id);
 
     void timeoutCancel(OrderTimeoutMessage message);
 }

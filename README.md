@@ -1571,3 +1571,97 @@ Timeout RoutingKey：order.timeout
 - 已支付订单收到超时消息后保持 `status = 1`，没有被取消，库存未恢复。
 - 本阶段未实现发货和确认收货。
 - 本阶段未修改 `docker/docker-compose.yml`。
+
+## 阶段 17：发货与确认收货
+
+本阶段在 `youxuan-order-service` 中实现管理员发货和用户确认收货。发货后订单从 `1` 待发货变为 `2` 待收货，并保存物流公司、物流单号和发货时间；确认收货后订单从 `2` 待收货变为 `3` 已完成，并保存确认收货时间。本阶段不实现首页运营、前端、搜索增强、优惠券新增能力、支付新增能力、Canal、Sentinel、Seata、秒杀，也未修改 `docker/docker-compose.yml`。
+
+### 环境说明
+
+当前机器 8848 端口位于 Windows TCP 排除范围内，启动服务时统一使用：
+
+```powershell
+--spring.cloud.nacos.discovery.server-addr=localhost:18848
+```
+
+不要启动 docker-compose 中映射 8848 的 Nacos 容器。
+
+### 启动依赖
+
+```powershell
+docker compose -f docker/docker-compose.yml up -d mysql redis rabbitmq
+```
+
+如未启动临时 Nacos，可使用 18848 端口启动：
+
+```powershell
+docker run -d --name youxuan-nacos-stage17 -e MODE=standalone -e TZ=Asia/Shanghai -p 18848:8848 -p 19848:9848 -p 19849:9849 --network youxuan-mall-net nacos/nacos-server:v2.2.3
+```
+
+启动服务时追加 Nacos 参数：
+
+```powershell
+mvn -pl youxuan-user-service -am spring-boot:run --spring.cloud.nacos.discovery.server-addr=localhost:18848
+mvn -pl youxuan-product-service -am spring-boot:run --spring.cloud.nacos.discovery.server-addr=localhost:18848
+mvn -pl youxuan-coupon-service -am spring-boot:run --spring.cloud.nacos.discovery.server-addr=localhost:18848
+mvn -pl youxuan-order-service -am spring-boot:run --spring.cloud.nacos.discovery.server-addr=localhost:18848
+mvn -pl youxuan-gateway -am spring-boot:run --spring.cloud.nacos.discovery.server-addr=localhost:18848
+```
+
+### 发货与确认收货接口
+
+管理员发货：
+
+```http
+POST http://localhost:9000/api/order/{id}/ship
+Authorization: Bearer <admin-token>
+Content-Type: application/json
+
+{
+  "deliveryCompany": "顺丰速运",
+  "trackingNo": "SF1234567890"
+}
+```
+
+用户确认收货：
+
+```http
+POST http://localhost:9000/api/order/{id}/receive
+Authorization: Bearer <user-token>
+```
+
+### 实现说明
+
+- 发货接口通过 `UserContext.getRole()` 获取当前角色，只允许 `ADMIN` 调用。
+- 只有 `status = 1` 的待发货订单可以发货。
+- 发货成功后写入 `delivery_company`、`tracking_no`、`delivery_time`，并将订单状态更新为 `2`。
+- 普通用户调用发货接口会返回无权限业务异常。
+- 确认收货接口通过 `UserContext.getUserId()` 校验订单归属，只允许订单所属用户调用。
+- 只有 `status = 2` 的待收货订单可以确认收货。
+- 确认收货成功后写入 `receive_time`，并将订单状态更新为 `3`。
+- 订单详情响应新增返回 `payTime`、`cancelTime`、`deliveryCompany`、`trackingNo`、`deliveryTime`、`receiveTime`，便于本阶段验收。
+
+### 本地验收记录
+
+验收日期：2026-06-27
+
+已验证内容：
+
+- `mvn -q -DskipTests package` 已验证通过。
+- MySQL、Redis、RabbitMQ 运行正常；Nacos 使用既有临时容器 `youxuan-nacos-stage15`，端口 `18848:8848`。
+- 启动 `youxuan-user-service`、`youxuan-product-service`、`youxuan-order-service`、`youxuan-gateway` 时已统一覆盖 Nacos 地址为 `localhost:18848`。
+- `youxuan-order-service` 已注册到 Nacos 18848，实例端口为 `9050` 且健康。
+- Gateway 访问 `/api/order/test/ping` 返回 `200`。
+- 创建订单并模拟支付后，订单状态为 `1` 待发货。
+- 普通 `USER` 调用 `POST /api/order/{id}/ship` 返回 `403`，提示 `无发货权限`。
+- `ADMIN` 调用 `POST /api/order/{id}/ship` 可以对待发货订单发货。
+- 发货后订单状态为 `2` 待收货，`delivery_company`、`tracking_no`、`delivery_time` 均有值。
+- 其他用户调用 `POST /api/order/{id}/receive` 确认该订单返回 `404`，不能操作他人订单。
+- 订单所属用户调用 `POST /api/order/{id}/receive` 成功，订单状态变为 `3` 已完成，`receive_time` 有值。
+- 已完成订单重复确认收货返回业务码 `5000`，提示 `订单已完成`。
+- 待支付订单调用发货返回业务码 `5000`，提示 `待支付订单不能发货`。
+- 已取消订单调用发货返回业务码 `5000`，提示 `已取消订单不能发货`。
+- 待发货订单直接确认收货返回业务码 `5000`，提示 `待发货订单不能确认收货`。
+- 已取消订单确认收货返回业务码 `5000`，提示 `已取消订单不能确认收货`。
+- 本阶段未实现首页运营、前端、搜索增强、优惠券新增能力、支付新增能力、Canal、Sentinel、Seata、秒杀。
+- 本阶段未修改 `docker/docker-compose.yml`。
