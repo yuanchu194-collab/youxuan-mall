@@ -18,6 +18,8 @@ public interface OrderService {
 
     PageResult<OrderPageVO> myOrders(Long pageNum, Long pageSize);
 
+    PageResult<OrderPageVO> adminOrders(Long pageNum, Long pageSize, Integer status);
+
     OrderDetailVO pay(Long id);
 
     OrderDetailVO cancel(Long id);

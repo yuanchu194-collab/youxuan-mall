@@ -125,4 +125,10 @@ public class ProductCacheService {
         }
         log.info("热门商品缓存删除");
     }
+
+    public void deleteHomeProductCaches() {
+        deleteHotProductsCache();
+        stringRedisTemplate.delete(List.of(RedisKeyConstants.HOME_INDEX, RedisKeyConstants.HOME_RECOMMEND_PRODUCTS));
+        log.info("首页商品相关缓存删除");
+    }
 }

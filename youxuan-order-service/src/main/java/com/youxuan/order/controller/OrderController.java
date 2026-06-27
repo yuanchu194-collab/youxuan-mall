@@ -47,6 +47,14 @@ public class OrderController {
         return Result.success(orderService.myOrders(pageNum, pageSize));
     }
 
+    @GetMapping("/admin/page")
+    public Result<PageResult<OrderPageVO>> adminOrders(
+            @RequestParam(name = "pageNum", defaultValue = "1") Long pageNum,
+            @RequestParam(name = "pageSize", defaultValue = "10") Long pageSize,
+            @RequestParam(name = "status", required = false) Integer status) {
+        return Result.success(orderService.adminOrders(pageNum, pageSize, status));
+    }
+
     @PostMapping("/{id:\\d+}/pay")
     public Result<OrderDetailVO> pay(@PathVariable("id") Long id) {
         return Result.success(orderService.pay(id));

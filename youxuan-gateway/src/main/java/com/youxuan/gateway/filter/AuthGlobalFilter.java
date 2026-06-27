@@ -35,6 +35,19 @@ public class AuthGlobalFilter implements GlobalFilter, Ordered {
     private static final String BEARER_PREFIX = "Bearer ";
     private static final String HEADER_USER_ID = "X-User-Id";
     private static final String HEADER_USER_ROLE = "X-User-Role";
+    private static final List<String> ALLOWED_CORS_ORIGINS = List.of(
+            "http://127.0.0.1:3000",
+            "http://localhost:3000",
+            "http://127.0.0.1:5173",
+            "http://localhost:5173"
+    );
+    private static final List<HttpMethod> ALLOWED_CORS_METHODS = List.of(
+            HttpMethod.GET,
+            HttpMethod.POST,
+            HttpMethod.PUT,
+            HttpMethod.DELETE,
+            HttpMethod.OPTIONS
+    );
 
     private final JwtUtils jwtUtils;
     private final ObjectMapper objectMapper;
@@ -57,6 +70,10 @@ public class AuthGlobalFilter implements GlobalFilter, Ordered {
     @Override
     public Mono<Void> filter(ServerWebExchange exchange, GatewayFilterChain chain) {
         ServerHttpRequest request = exchange.getRequest();
+        if (HttpMethod.OPTIONS.equals(request.getMethod())) {
+            return okPreflight(exchange);
+        }
+
         if (isWhiteListed(request)) {
             return chain.filter(exchange);
         }
@@ -108,13 +125,38 @@ public class AuthGlobalFilter implements GlobalFilter, Ordered {
         return false;
     }
 
+    private Mono<Void> okPreflight(ServerWebExchange exchange) {
+        ServerHttpResponse response = exchange.getResponse();
+        addCorsHeaders(exchange.getRequest(), response);
+        response.setStatusCode(HttpStatus.OK);
+        return response.setComplete();
+    }
+
     private Mono<Void> unauthorized(ServerWebExchange exchange, String message) {
         ServerHttpResponse response = exchange.getResponse();
         response.setStatusCode(HttpStatus.UNAUTHORIZED);
         response.getHeaders().setContentType(MediaType.APPLICATION_JSON);
+        addCorsHeaders(exchange.getRequest(), response);
         byte[] bytes = toJsonBytes(Result.fail(ErrorCode.UNAUTHORIZED, message));
         DataBuffer buffer = response.bufferFactory().wrap(bytes);
         return response.writeWith(Mono.just(buffer));
+    }
+
+    private void addCorsHeaders(ServerHttpRequest request, ServerHttpResponse response) {
+        HttpHeaders headers = response.getHeaders();
+        String origin = request.getHeaders().getOrigin();
+        if (ALLOWED_CORS_ORIGINS.contains(origin)) {
+            headers.setAccessControlAllowOrigin(origin);
+            headers.setAccessControlAllowCredentials(true);
+            headers.add(HttpHeaders.VARY, HttpHeaders.ORIGIN);
+            headers.add(HttpHeaders.VARY, HttpHeaders.ACCESS_CONTROL_REQUEST_METHOD);
+            headers.add(HttpHeaders.VARY, HttpHeaders.ACCESS_CONTROL_REQUEST_HEADERS);
+        }
+        headers.setAccessControlAllowMethods(ALLOWED_CORS_METHODS);
+        String requestHeaders = request.getHeaders().getFirst(HttpHeaders.ACCESS_CONTROL_REQUEST_HEADERS);
+        headers.add(HttpHeaders.ACCESS_CONTROL_ALLOW_HEADERS, StringUtils.hasText(requestHeaders) ? requestHeaders : "*");
+        headers.add(HttpHeaders.ACCESS_CONTROL_EXPOSE_HEADERS, HttpHeaders.AUTHORIZATION);
+        headers.setAccessControlMaxAge(1800);
     }
 
     private byte[] toJsonBytes(Result<Void> result) {

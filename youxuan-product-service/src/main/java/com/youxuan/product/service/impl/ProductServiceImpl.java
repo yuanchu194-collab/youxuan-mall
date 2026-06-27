@@ -263,7 +263,7 @@ public class ProductServiceImpl implements ProductService {
     private void deleteProductCaches(Long productId, boolean includeHotProducts) {
         productCacheService.deleteProductDetailCache(productId);
         if (includeHotProducts) {
-            productCacheService.deleteHotProductsCache();
+            productCacheService.deleteHomeProductCaches();
         }
     }
 

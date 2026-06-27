@@ -2,9 +2,9 @@
 
 ## 当前阶段
 
-阶段 5：Gateway 登录校验与用户透传。
+阶段 21-5：前端真实接口逐项修复：首页真实商品图片、推荐商品字段、优惠券领取、后台订单管理。
 
-本阶段包含：
+第一版后端已完成：
 
 - 父工程 `pom.xml`
 - `youxuan-common`
@@ -18,39 +18,9 @@
 - `youxuan-cart-service`
 - `youxuan-home-service`
 
-`youxuan-common` 已补充公共基础能力：
+第一版后端能力包括：用户注册登录、JWT 与 Gateway 透传、商品分类与商品库存、Redis 商品缓存、Elasticsearch 商品搜索、RabbitMQ 商品变更同步 ES、MinIO 商品图片上传、购物车、收货地址、优惠券 Redis + Lua 领取、订单确认、创建订单、防重复提交、模拟支付、取消和超时取消、管理员发货、用户确认收货、首页 Banner、推荐位和首页聚合接口。
 
-- `Result`
-- `PageResult`
-- `ErrorCode`
-- `BusinessException`
-- `GlobalExceptionHandler`
-- `BaseEntity`
-- `UserContext`
-- `RedisKeyConstants`
-- `RabbitMqConstants`
-- `MyBatisPlusConfig`
-- `Knife4jConfig`
-- `JwtUtils`
-
-`youxuan-user-service` 已实现：
-
-- 用户注册
-- 用户登录
-- 查询当前用户信息
-- BCrypt 密码加密
-- 登录成功返回包含 `userId`、`username`、`role` 的 JWT
-
-`youxuan-gateway` 已实现：
-
-- 白名单接口放行
-- 非白名单接口校验 `Authorization: Bearer token`
-- 解析 JWT 中的 `userId`、`username`、`role`
-- 向下游透传 `X-User-Id`、`X-User-Role`
-
-下游服务已通过公共拦截器读取请求头并写入 `UserContext`，请求结束后清理上下文。
-
-未实现商品 CRUD、订单、优惠券、购物车、地址等后续业务，也未实现 ADMIN 接口权限控制。
+本阶段未实现 Canal、Sentinel、Seata、秒杀；阶段 21 前端已进入演示联调和页面补全。
 
 ## 版本
 
@@ -67,6 +37,18 @@
 
 ```powershell
 docker compose -f docker/docker-compose.yml up -d mysql nacos
+```
+
+当前机器 8848 在 Windows TCP 排除范围内，第一版联调统一使用临时 Nacos 端口：
+
+```text
+localhost:18848
+```
+
+不要启动 `docker/docker-compose.yml` 中映射 8848 的 Nacos。启动服务时统一追加：
+
+```powershell
+-Dspring-boot.run.arguments="--spring.cloud.nacos.discovery.server-addr=localhost:18848"
 ```
 
 ## 阶段 6：商品服务 CRUD 与库存
@@ -1847,3 +1829,234 @@ youxuan:home:recommend-products
 ```
 
 缓存过期时间为 30 分钟。第二次访问 `GET /api/home/index` 会优先命中 `youxuan:home:index`，新增、修改、删除 Banner 会删除首页聚合和 Banner 缓存；新增、删除推荐位会删除首页聚合和推荐商品缓存。
+
+## 阶段 19：第一版联调与文档整理
+
+本阶段完成第一版后端闭环联调，并整理第一版启动顺序、服务端口、中间件账号密码、接口测试顺序和常见问题。未实现 Canal、Sentinel、Seata、秒杀，未开始前端，未修改 `docker/docker-compose.yml`。
+
+详细接口测试记录见：
+
+```text
+docs/04-接口测试记录.md
+```
+
+常见问题排查见：
+
+```text
+docs/05-常见问题排查.md
+```
+
+### 中间件启动顺序
+
+当前本机 8848 在 Windows TCP 排除范围内，不要启动 Compose 中的 Nacos 8848。先启动第一版所需中间件：
+
+```powershell
+docker compose -f docker/docker-compose.yml up -d mysql redis rabbitmq elasticsearch minio
+```
+
+启动临时 Nacos 到 18848：
+
+```powershell
+docker start youxuan-nacos-stage15
+```
+
+如果没有可复用的临时 Nacos 容器，可新建：
+
+```powershell
+docker run -d --name youxuan-nacos-stage19 -e MODE=standalone -e TZ=Asia/Shanghai -p 18848:8848 -p 19848:9848 -p 19849:9849 --network youxuan-mall-net nacos/nacos-server:v2.2.3
+```
+
+检查中间件：
+
+```powershell
+curl.exe http://localhost:18848/nacos/actuator/health
+curl.exe http://localhost:9200
+curl.exe http://localhost:9100/minio/health/live
+```
+
+### 服务启动顺序
+
+每个服务单独打开一个 PowerShell 窗口启动：
+
+```powershell
+mvn -pl youxuan-user-service -am spring-boot:run -Dspring-boot.run.arguments="--spring.cloud.nacos.discovery.server-addr=localhost:18848"
+mvn -pl youxuan-product-service -am spring-boot:run -Dspring-boot.run.arguments="--spring.cloud.nacos.discovery.server-addr=localhost:18848"
+mvn -pl youxuan-search-service -am spring-boot:run -Dspring-boot.run.arguments="--spring.cloud.nacos.discovery.server-addr=localhost:18848"
+mvn -pl youxuan-file-service -am spring-boot:run -Dspring-boot.run.arguments="--spring.cloud.nacos.discovery.server-addr=localhost:18848"
+mvn -pl youxuan-coupon-service -am spring-boot:run -Dspring-boot.run.arguments="--spring.cloud.nacos.discovery.server-addr=localhost:18848"
+mvn -pl youxuan-order-service -am spring-boot:run -Dspring-boot.run.arguments="--spring.cloud.nacos.discovery.server-addr=localhost:18848"
+mvn -pl youxuan-cart-service -am spring-boot:run -Dspring-boot.run.arguments="--spring.cloud.nacos.discovery.server-addr=localhost:18848"
+mvn -pl youxuan-home-service -am spring-boot:run -Dspring-boot.run.arguments="--spring.cloud.nacos.discovery.server-addr=localhost:18848"
+mvn -pl youxuan-gateway -am spring-boot:run -Dspring-boot.run.arguments="--spring.cloud.nacos.discovery.server-addr=localhost:18848"
+```
+
+服务端口：
+
+```text
+youxuan-gateway          9000
+youxuan-user-service     9010
+youxuan-product-service  9020
+youxuan-search-service   9030
+youxuan-coupon-service   9040
+youxuan-order-service    9050
+youxuan-file-service     9060
+youxuan-cart-service     9070
+youxuan-home-service     9080
+```
+
+中间件端口和账号：
+
+```text
+MySQL               localhost:3307  root/root
+Redis               localhost:6379
+RabbitMQ AMQP       localhost:5672   guest/guest
+RabbitMQ Console    http://localhost:15672  guest/guest
+Nacos               http://localhost:18848/nacos  nacos/nacos
+Elasticsearch       http://localhost:9200
+MinIO API           http://localhost:9100  minioadmin/minioadmin
+MinIO Console       http://localhost:9101  minioadmin/minioadmin
+```
+
+### 第一版接口测试顺序
+
+所有业务接口统一从 Gateway 访问：
+
+```text
+http://localhost:9000
+```
+
+除注册、登录和 `/test/ping` 外，其余接口需要：
+
+```text
+Authorization: Bearer <token>
+```
+
+推荐按以下顺序测试：
+
+1. `POST /api/user/register` 注册普通用户和管理员测试用户。
+2. `POST /api/user/login` 登录获取 token。
+3. `POST /api/product/category` 新增商品分类。
+4. `POST /api/file/product/image` 上传商品图片到 MinIO。
+5. `POST /api/product` 新增商品并保存 `mainImage`。
+6. `GET /api/product/{id}` 连续查询两次，验证商品详情 Redis 缓存。
+7. `POST /api/search/product/importAll` 导入商品到 Elasticsearch。
+8. `POST /api/search/product` 搜索商品。
+9. `PUT /api/product/{id}` 修改商品，等待 RabbitMQ 同步 ES 后再次搜索。
+10. `POST /api/cart/add` 加入购物车。
+11. `PUT /api/cart/check` 勾选购物车项。
+12. `POST /api/user/address` 新增默认收货地址。
+13. `POST /api/coupon` 创建优惠券。
+14. `POST /api/coupon/{id}/preheat` 预热优惠券库存。
+15. `POST /api/coupon/{id}/receive` 领取优惠券。
+16. `POST /api/order/confirm` 进入订单确认页并计算价格。
+17. `POST /api/order` 提交订单并扣减库存。
+18. `POST /api/order/{id}/pay` 模拟支付。
+19. `POST /api/order/{id}/ship` 管理员发货。
+20. `POST /api/order/{id}/receive` 用户确认收货。
+21. 再创建一个待支付订单，不支付，等待 1 分钟后通过 `GET /api/order/{id}` 验证超时取消。
+22. `POST /api/home/banner` 新增首页 Banner。
+23. `PUT /api/home/banner/{id}` 修改首页 Banner。
+24. `POST /api/home/recommend` 新增推荐商品。
+25. `GET /api/home/index` 连续访问两次，验证首页聚合和 Redis 缓存。
+26. `DELETE /api/home/banner/{id}` 删除 Banner，验证首页缓存删除。
+27. `DELETE /api/home/recommend/{id}` 删除推荐位。
+
+### 本地联调记录
+
+联调日期：2026-06-27
+
+已验证：
+
+- `home_banner`、`home_recommend` 表存在。
+- `mvn -q -DskipTests package` 通过。
+- MySQL、Redis、RabbitMQ、Elasticsearch、MinIO 运行正常。
+- Nacos 使用 `youxuan-nacos-stage15`，端口 `18848:8848`。
+- 9 个后端服务均使用 `localhost:18848` 注册到 Nacos。
+- Gateway 访问 `/api/user/test/ping`、`/api/product/test/ping`、`/api/search/test/ping`、`/api/file/test/ping`、`/api/coupon/test/ping`、`/api/order/test/ping`、`/api/cart/test/ping`、`/api/home/test/ping` 均返回 `200`。
+- 注册和登录成功，JWT 可用于后续接口。
+- MinIO 上传返回 URL 形如 `http://localhost:9100/youxuan-mall/products/...`。
+- 商品新增后 `mainImage` 在商品详情中正确返回。
+- 商品详情第二次访问前 Redis 中存在 `youxuan:product:detail:{productId}`。
+- ES 全量导入成功，关键词搜索能查到商品。
+- 修改商品后等待 RabbitMQ 消费，ES 搜索能查到更新后的商品名。
+- 购物车加入和勾选成功。
+- 默认收货地址创建和查询成功。
+- 优惠券创建、预热、领取成功，领取后可在我的优惠券中查到。
+- 订单确认页计算 `payAmount = 356.00`。
+- 创建订单成功，支付后状态为 `1`，发货后状态为 `2`，确认收货后状态为 `3`。
+- 新建待支付订单等待 75 秒后状态为 `4`，超时取消成功。
+- 首页 Banner 新增、修改、删除成功。
+- 首页推荐商品新增、删除成功。
+- 首页聚合返回 `banners`、`categories`、`hotProducts`、`recommendProducts`。
+- 第二次访问首页聚合后 Redis 存在 `youxuan:home:index`。
+- 删除 Banner 后 `youxuan:home:index` 被删除。
+
+未做：
+
+- 未实现 Canal、Sentinel、Seata、秒杀。
+- 未开始阶段 21 前端。
+- 未修改 `docker/docker-compose.yml`。
+
+## 阶段 21：漂亮前端
+
+前端项目目录：
+
+```text
+youxuan-mall-web
+```
+
+技术栈：
+
+```text
+Vue 3 + Vite + TypeScript + Pinia + Vue Router + Axios + Element Plus + 自定义 CSS
+```
+
+启动前需先按阶段 19 启动后端服务和 Gateway，前端统一请求：
+
+```text
+http://localhost:9000
+```
+
+前端启动：
+
+```powershell
+cd D:\code\youxuan-mall\youxuan-mall-web
+npm install
+npm run dev
+```
+
+访问地址：
+
+```text
+http://127.0.0.1:5173
+```
+
+已完成页面：
+
+1. 登录页 `/login`
+2. 注册页 `/register`
+3. 商城首页 `/`
+4. 商品列表页 `/products`
+5. 商品详情页 `/products/:id`
+6. 购物车页 `/cart`
+7. 收货地址管理页 `/addresses`
+8. 订单确认页 `/checkout`
+9. 我的订单页 `/orders`
+10. 优惠券中心 `/coupons`
+11. 我的优惠券 `/my-coupons`
+12. 后台商品管理页 `/admin/products`
+13. 后台优惠券管理页 `/admin/coupons`
+14. 后台订单管理页 `/admin/orders`
+
+说明：
+
+- 请求头统一使用 `Authorization: Bearer token`。
+- 默认接口地址可通过 `VITE_API_BASE_URL` 覆盖。
+- 阶段 21-4 补充了优惠券中心、我的优惠券、管理员订单管理、商品图片字段归一化和演示数据脚本。
+- 阶段 21-5 按真实接口响应修复了首页推荐商品字段映射：`hotProducts` 使用 `id/name/mainImage`，`recommendProducts` 使用 `productId/productName/mainImage`，前端统一通过 `normalizeProduct` 适配。
+- 商品卡片、首页、商品列表、商品详情、购物车和订单确认均优先显示真实 `mainImage`，为空或加载失败时才显示前端占位图。
+- 优惠券中心 `/coupons` 调用真实优惠券分页和领取接口，未登录领取会跳转登录；管理员优惠券预热后提示用户到优惠券中心领取。
+- 后台订单管理 `/admin/orders` 使用 `GET /api/order/admin/page` 和 `POST /api/order/{id}/ship`。如果当前运行实例仍返回 `code=500`，请先用最新构建重启 `youxuan-order-service`。
+- `scripts/prepare-demo-data.ps1` 会重建 8 个分类、40 个真实中文商品、3 条 Banner、8 个真实商品推荐位、5 张优惠券，并在 Gateway 可用时自动预热优惠券、清理 Redis 首页/商品缓存、重新导入 ES。
+- 本阶段没有实现 Canal、Sentinel、Seata、秒杀。
+- `docker/docker-compose.yml` 未修改。

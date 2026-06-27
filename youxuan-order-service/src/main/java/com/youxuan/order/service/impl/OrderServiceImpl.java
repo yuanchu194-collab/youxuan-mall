@@ -196,6 +196,22 @@ public class OrderServiceImpl implements OrderService {
     }
 
     @Override
+    public PageResult<OrderPageVO> adminOrders(Long pageNum, Long pageSize, Integer status) {
+        if (!ROLE_ADMIN.equals(currentRole())) {
+            throw new BusinessException(ErrorCode.FORBIDDEN, "无订单管理权限");
+        }
+        long current = pageNum == null || pageNum < 1 ? 1L : pageNum;
+        long size = pageSize == null || pageSize < 1 ? 10L : pageSize;
+        Page<MallOrder> page = mallOrderMapper.selectPage(new Page<>(current, size),
+                new LambdaQueryWrapper<MallOrder>()
+                        .eq(status != null, MallOrder::getStatus, status)
+                        .orderByDesc(MallOrder::getCreateTime)
+                        .orderByDesc(MallOrder::getId));
+        List<OrderPageVO> records = page.getRecords().stream().map(OrderPageVO::from).toList();
+        return PageResult.of(page.getTotal(), current, size, records);
+    }
+
+    @Override
     @Transactional(rollbackFor = Exception.class)
     public OrderDetailVO pay(Long id) {
         Long userId = currentUserId();
