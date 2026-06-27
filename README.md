@@ -1472,3 +1472,102 @@ Invoke-RestMethod -Method Get -Uri "http://localhost:9000/api/order/my?pageNum=1
 - 优惠券不可用时创建订单失败，返回 `优惠券不可用`。
 - 本阶段代码未实现支付、取消订单、订单超时取消消费者、发货、确认收货。
 - 本阶段未修改 `docker/docker-compose.yml`。
+
+## 阶段 16：模拟支付、取消订单、订单超时取消
+
+本阶段在 `youxuan-order-service` 中实现模拟支付、手动取消订单和订单超时自动取消。支付只修改订单状态，不接第三方支付；取消订单会按订单明细逐项恢复库存，并在订单使用优惠券时恢复优惠券。本阶段不实现发货、确认收货、首页运营、前端、Canal、Sentinel、Seata、秒杀，也未修改 `docker/docker-compose.yml`。
+
+### 环境说明
+
+当前机器 8848 端口位于 Windows TCP 排除范围内，启动服务时统一使用：
+
+```powershell
+--spring.cloud.nacos.discovery.server-addr=localhost:18848
+```
+
+不要启动 docker-compose 中映射 8848 的 Nacos 容器。
+
+### 启动依赖
+
+```powershell
+docker compose -f docker/docker-compose.yml up -d mysql redis rabbitmq
+```
+
+启动临时 Nacos：
+
+```powershell
+docker run -d --name youxuan-nacos-stage16 -e MODE=standalone -e TZ=Asia/Shanghai -p 18848:8848 -p 19848:9848 -p 19849:9849 --network youxuan-mall-net nacos/nacos-server:v2.2.3
+```
+
+启动服务时追加 Nacos 参数：
+
+```powershell
+mvn -pl youxuan-user-service -am spring-boot:run --spring.cloud.nacos.discovery.server-addr=localhost:18848
+mvn -pl youxuan-product-service -am spring-boot:run --spring.cloud.nacos.discovery.server-addr=localhost:18848
+mvn -pl youxuan-coupon-service -am spring-boot:run --spring.cloud.nacos.discovery.server-addr=localhost:18848
+mvn -pl youxuan-order-service -am spring-boot:run --spring.cloud.nacos.discovery.server-addr=localhost:18848
+mvn -pl youxuan-gateway -am spring-boot:run --spring.cloud.nacos.discovery.server-addr=localhost:18848
+```
+
+### 订单支付与取消接口
+
+模拟支付：
+
+```http
+POST http://localhost:9000/api/order/{id}/pay
+Authorization: Bearer <token>
+```
+
+手动取消订单：
+
+```http
+POST http://localhost:9000/api/order/{id}/cancel
+Authorization: Bearer <token>
+```
+
+### 实现说明
+
+- 只有订单所属用户可以支付或取消自己的订单。
+- 支付只允许待支付订单，成功后 `status = 1`，并写入 `pay_time`。
+- 已支付订单不能重复支付，已取消订单不能支付。
+- 取消只允许待支付订单，成功后 `status = 4`，并写入 `cancel_time`。
+- 取消订单按 `mall_order_item` 逐项调用 `product-service` 的 `/stock/restore` 恢复库存。
+- 使用优惠券的订单取消后，调用 `coupon-service` 的 `/restore` 恢复优惠券为未使用。
+- 创建订单成功后发送订单超时取消消息。
+- 订单超时取消使用 RabbitMQ 死信队列实现：先发送到 `youxuan.order.timeout.delay.queue`，1 分钟 TTL 到期后死信到 `youxuan.order.timeout.queue`。
+- 超时消费者收到消息后重新查询订单状态；只有仍为待支付的订单才会自动取消，已支付或已取消订单不处理。
+- 消费失败会打印错误日志，不实现发货和确认收货。
+
+### 本阶段 RabbitMQ
+
+```text
+Exchange：youxuan.order.exchange
+Delay Queue：youxuan.order.timeout.delay.queue
+Timeout Queue：youxuan.order.timeout.queue
+Delay RoutingKey：order.timeout.delay
+Timeout RoutingKey：order.timeout
+```
+
+### 本地验收记录
+
+验收日期：2026-06-27
+
+已验证内容：
+
+- `mvn -q -DskipTests package` 已验证通过。
+- MySQL、Redis、RabbitMQ 运行正常；Nacos 使用既有临时容器 `youxuan-nacos-stage15`，端口 `18848:8848`。
+- 启动 `youxuan-user-service`、`youxuan-product-service`、`youxuan-coupon-service`、`youxuan-order-service`、`youxuan-gateway` 时已统一覆盖 Nacos 地址为 `localhost:18848`。
+- Gateway 访问 `/api/user/test/ping`、`/api/product/test/ping`、`/api/coupon/test/ping`、`/api/order/test/ping` 均返回 `200`。
+- 待支付订单调用 `POST /api/order/{id}/pay` 成功。
+- 支付后 `mall_order.status = 1`，`pay_time` 有值。
+- 已支付订单重复支付返回业务码 `5000`。
+- 已支付订单调用取消接口返回业务码 `5000`。
+- 待支付订单调用 `POST /api/order/{id}/cancel` 成功。
+- 手动取消后 `mall_order.status = 4`，`cancel_time` 有值。
+- 手动取消后商品库存恢复，`product_stock.stock` 恢复到 `5`，`locked_stock` 恢复到 `0`。
+- 手动取消使用优惠券的订单后，`user_coupon.status` 恢复为 `0`，`order_id` 清空。
+- 创建待支付订单后不支付，1 分钟后被超时自动取消。
+- 超时自动取消后商品库存恢复，优惠券恢复为未使用。
+- 已支付订单收到超时消息后保持 `status = 1`，没有被取消，库存未恢复。
+- 本阶段未实现发货和确认收货。
+- 本阶段未修改 `docker/docker-compose.yml`。

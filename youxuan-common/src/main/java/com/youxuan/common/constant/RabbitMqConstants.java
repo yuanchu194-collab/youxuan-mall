@@ -11,10 +11,12 @@ public final class RabbitMqConstants {
 
     public static final String PRODUCT_SYNC_ES_QUEUE = "youxuan.product.sync-es.queue";
     public static final String COUPON_RECEIVE_QUEUE = "youxuan.coupon.receive.queue";
+    public static final String ORDER_TIMEOUT_DELAY_QUEUE = "youxuan.order.timeout.delay.queue";
     public static final String ORDER_TIMEOUT_QUEUE = "youxuan.order.timeout.queue";
 
     public static final String PRODUCT_SYNC_ES_ROUTING_KEY = "product.sync.es";
     public static final String COUPON_RECEIVE_ROUTING_KEY = "coupon.receive";
+    public static final String ORDER_TIMEOUT_DELAY_ROUTING_KEY = "order.timeout.delay";
     public static final String ORDER_TIMEOUT_ROUTING_KEY = "order.timeout";
 
     private RabbitMqConstants() {

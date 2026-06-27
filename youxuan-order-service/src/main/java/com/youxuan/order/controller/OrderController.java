@@ -45,4 +45,14 @@ public class OrderController {
             @RequestParam(name = "pageSize", defaultValue = "10") Long pageSize) {
         return Result.success(orderService.myOrders(pageNum, pageSize));
     }
+
+    @PostMapping("/{id:\\d+}/pay")
+    public Result<OrderDetailVO> pay(@PathVariable("id") Long id) {
+        return Result.success(orderService.pay(id));
+    }
+
+    @PostMapping("/{id:\\d+}/cancel")
+    public Result<OrderDetailVO> cancel(@PathVariable("id") Long id) {
+        return Result.success(orderService.cancel(id));
+    }
 }

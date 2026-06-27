@@ -1,10 +1,12 @@
 package com.youxuan.order.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.youxuan.common.constant.RedisKeyConstants;
 import com.youxuan.common.context.UserContext;
 import com.youxuan.common.exception.BusinessException;
+import com.youxuan.common.message.OrderTimeoutMessage;
 import com.youxuan.common.result.ErrorCode;
 import com.youxuan.common.result.PageResult;
 import com.youxuan.common.result.Result;
@@ -24,6 +26,7 @@ import com.youxuan.order.entity.MallOrder;
 import com.youxuan.order.entity.MallOrderItem;
 import com.youxuan.order.mapper.MallOrderItemMapper;
 import com.youxuan.order.mapper.MallOrderMapper;
+import com.youxuan.order.mq.OrderTimeoutProducer;
 import com.youxuan.order.service.OrderService;
 import com.youxuan.order.support.OrderNoGenerator;
 import com.youxuan.order.vo.OrderDetailVO;
@@ -31,6 +34,7 @@ import com.youxuan.order.vo.OrderItemVO;
 import com.youxuan.order.vo.OrderPageVO;
 import java.math.BigDecimal;
 import java.time.Duration;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -44,7 +48,7 @@ import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 /**
- * 订单服务实现。当前阶段只创建待支付订单，不实现支付、取消、发货和确认收货。
+ * 订单服务实现。当前阶段实现创建、模拟支付、取消和超时取消，不实现发货和确认收货。
  */
 @Service
 public class OrderServiceImpl implements OrderService {
@@ -54,6 +58,8 @@ public class OrderServiceImpl implements OrderService {
     private static final String SOURCE_CART = "CART";
     private static final String SOURCE_BUY_NOW = "BUY_NOW";
     private static final int ORDER_STATUS_WAIT_PAY = 0;
+    private static final int ORDER_STATUS_WAIT_DELIVERY = 1;
+    private static final int ORDER_STATUS_CANCELED = 4;
     private static final int PRODUCT_ON = 1;
     private static final int SUCCESS_CODE = 200;
     private static final Duration SUBMIT_KEY_TTL = Duration.ofSeconds(10);
@@ -66,6 +72,7 @@ public class OrderServiceImpl implements OrderService {
     private final CartClient cartClient;
     private final OrderNoGenerator orderNoGenerator;
     private final StringRedisTemplate stringRedisTemplate;
+    private final OrderTimeoutProducer orderTimeoutProducer;
 
     public OrderServiceImpl(MallOrderMapper mallOrderMapper,
                             MallOrderItemMapper mallOrderItemMapper,
@@ -74,7 +81,8 @@ public class OrderServiceImpl implements OrderService {
                             CouponClient couponClient,
                             CartClient cartClient,
                             OrderNoGenerator orderNoGenerator,
-                            StringRedisTemplate stringRedisTemplate) {
+                            StringRedisTemplate stringRedisTemplate,
+                            OrderTimeoutProducer orderTimeoutProducer) {
         this.mallOrderMapper = mallOrderMapper;
         this.mallOrderItemMapper = mallOrderItemMapper;
         this.productClient = productClient;
@@ -83,6 +91,7 @@ public class OrderServiceImpl implements OrderService {
         this.cartClient = cartClient;
         this.orderNoGenerator = orderNoGenerator;
         this.stringRedisTemplate = stringRedisTemplate;
+        this.orderTimeoutProducer = orderTimeoutProducer;
     }
 
     @Override
@@ -130,6 +139,7 @@ public class OrderServiceImpl implements OrderService {
                 couponUsed = true;
             }
 
+            orderTimeoutProducer.sendAfterCommit(order.getId(), order.getOrderNo());
             registerCartCleanup(request.getSource(), userId, role);
             return detail(order.getId());
         } catch (RuntimeException exception) {
@@ -175,6 +185,66 @@ public class OrderServiceImpl implements OrderService {
                         .orderByDesc(MallOrder::getId));
         List<OrderPageVO> records = page.getRecords().stream().map(OrderPageVO::from).toList();
         return PageResult.of(page.getTotal(), current, size, records);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public OrderDetailVO pay(Long id) {
+        Long userId = currentUserId();
+        MallOrder order = getCurrentUserOrder(id, userId);
+        if (Integer.valueOf(ORDER_STATUS_WAIT_DELIVERY).equals(order.getStatus())) {
+            throw new BusinessException(ErrorCode.BUSINESS_ERROR, "订单已支付");
+        }
+        if (Integer.valueOf(ORDER_STATUS_CANCELED).equals(order.getStatus())) {
+            throw new BusinessException(ErrorCode.BUSINESS_ERROR, "已取消订单不能支付");
+        }
+        if (!Integer.valueOf(ORDER_STATUS_WAIT_PAY).equals(order.getStatus())) {
+            throw new BusinessException(ErrorCode.BUSINESS_ERROR, "订单状态不允许支付");
+        }
+        int updated = mallOrderMapper.update(null, new LambdaUpdateWrapper<MallOrder>()
+                .eq(MallOrder::getId, order.getId())
+                .eq(MallOrder::getUserId, userId)
+                .eq(MallOrder::getStatus, ORDER_STATUS_WAIT_PAY)
+                .set(MallOrder::getStatus, ORDER_STATUS_WAIT_DELIVERY)
+                .set(MallOrder::getPayTime, LocalDateTime.now()));
+        if (updated == 0) {
+            throw new BusinessException(ErrorCode.BUSINESS_ERROR, "订单支付失败，请刷新后重试");
+        }
+        return detail(order.getId());
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public OrderDetailVO cancel(Long id) {
+        Long userId = currentUserId();
+        MallOrder order = getCurrentUserOrder(id, userId);
+        cancelWaitPayOrder(order, userId, currentRole(), true);
+        return detail(order.getId());
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void timeoutCancel(OrderTimeoutMessage message) {
+        if (message == null || message.getOrderId() == null) {
+            log.warn("收到无效订单超时消息 message={}", message);
+            return;
+        }
+        MallOrder order = mallOrderMapper.selectById(message.getOrderId());
+        if (order == null) {
+            log.warn("订单超时消息对应订单不存在 orderId={}", message.getOrderId());
+            return;
+        }
+        if (message.getOrderNo() != null && !message.getOrderNo().equals(order.getOrderNo())) {
+            log.warn("订单超时消息订单号不匹配 messageOrderNo={}, dbOrderNo={}",
+                    message.getOrderNo(), order.getOrderNo());
+            return;
+        }
+        if (!Integer.valueOf(ORDER_STATUS_WAIT_PAY).equals(order.getStatus())) {
+            log.info("订单已非待支付状态，忽略超时取消 orderId={}, status={}", order.getId(), order.getStatus());
+            return;
+        }
+        cancelWaitPayOrder(order, order.getUserId(), "USER", false);
+        log.info("订单超时自动取消成功 orderId={}, orderNo={}", order.getId(), order.getOrderNo());
     }
 
     private OrderItemSnapshot buildSnapshot(OrderCreateItemRequest itemRequest) {
@@ -284,6 +354,58 @@ public class OrderServiceImpl implements OrderService {
         } catch (RuntimeException exception) {
             log.error("订单创建失败后恢复优惠券异常 couponId={}, orderId={}", couponId, orderId, exception);
         }
+    }
+
+    private void cancelWaitPayOrder(MallOrder order, Long userId, String role, boolean manual) {
+        if (!Integer.valueOf(ORDER_STATUS_WAIT_PAY).equals(order.getStatus())) {
+            if (manual && Integer.valueOf(ORDER_STATUS_WAIT_DELIVERY).equals(order.getStatus())) {
+                throw new BusinessException(ErrorCode.BUSINESS_ERROR, "已支付订单不能取消");
+            }
+            if (manual && Integer.valueOf(ORDER_STATUS_CANCELED).equals(order.getStatus())) {
+                throw new BusinessException(ErrorCode.BUSINESS_ERROR, "订单已取消");
+            }
+            if (manual) {
+                throw new BusinessException(ErrorCode.BUSINESS_ERROR, "订单状态不允许取消");
+            }
+            return;
+        }
+        int updated = mallOrderMapper.update(null, new LambdaUpdateWrapper<MallOrder>()
+                .eq(MallOrder::getId, order.getId())
+                .eq(MallOrder::getStatus, ORDER_STATUS_WAIT_PAY)
+                .set(MallOrder::getStatus, ORDER_STATUS_CANCELED)
+                .set(MallOrder::getCancelTime, LocalDateTime.now()));
+        if (updated == 0) {
+            if (manual) {
+                throw new BusinessException(ErrorCode.BUSINESS_ERROR, "订单取消失败，请刷新后重试");
+            }
+            log.info("订单超时取消时状态已变化 orderId={}", order.getId());
+            return;
+        }
+
+        List<MallOrderItem> items = mallOrderItemMapper.selectList(new LambdaQueryWrapper<MallOrderItem>()
+                .eq(MallOrderItem::getOrderId, order.getId()));
+        for (MallOrderItem item : items) {
+            unwrapVoid(productClient.restoreStock(new StockChangeClientRequest(item.getProductId(), item.getQuantity())),
+                    "恢复商品库存失败");
+        }
+        if (order.getCouponId() != null) {
+            unwrapVoid(couponClient.restore(new CouponRestoreClientRequest(order.getCouponId(), order.getId()),
+                    userId, role), "恢复优惠券失败");
+        }
+    }
+
+    private MallOrder getCurrentUserOrder(Long id, Long userId) {
+        if (id == null) {
+            throw new BusinessException(ErrorCode.PARAM_ERROR, "订单ID不能为空");
+        }
+        MallOrder order = mallOrderMapper.selectOne(new LambdaQueryWrapper<MallOrder>()
+                .eq(MallOrder::getId, id)
+                .eq(MallOrder::getUserId, userId)
+                .last("LIMIT 1"));
+        if (order == null) {
+            throw new BusinessException(ErrorCode.NOT_FOUND, "订单不存在");
+        }
+        return order;
     }
 
     private void validateDuplicateProducts(List<OrderCreateItemRequest> items) {
