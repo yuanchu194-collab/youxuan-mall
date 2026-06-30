@@ -176,14 +176,14 @@ onMounted(load)
 
 <style scoped>
 .home-page {
-  padding-bottom: 24px;
+  padding-bottom: 18px;
 }
 
 .home-hero {
   display: grid;
-  grid-template-columns: 236px minmax(0, 1fr);
+  grid-template-columns: 260px minmax(0, 1fr);
   align-items: stretch;
-  gap: 26px;
+  gap: 28px;
 }
 
 .category-panel {
@@ -197,7 +197,7 @@ onMounted(load)
 }
 
 .category-title {
-  height: 54px;
+  height: 48px;
   display: flex;
   align-items: center;
   gap: 12px;
@@ -212,7 +212,7 @@ onMounted(load)
 }
 
 .category-link {
-  min-height: 42px;
+  min-height: 29px;
   display: flex;
   align-items: center;
   gap: 12px;
@@ -228,8 +228,8 @@ onMounted(load)
 }
 
 .category-icon {
-  width: 22px;
-  height: 22px;
+  width: 20px;
+  height: 20px;
   display: grid;
   flex: 0 0 auto;
   place-items: center;
@@ -242,7 +242,7 @@ onMounted(load)
   min-width: 0;
   flex: 1;
   overflow: hidden;
-  font-size: 14px;
+  font-size: 13px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -265,18 +265,18 @@ onMounted(load)
 
 .home-banner-frame :deep(.home-banner-carousel),
 .home-banner-frame :deep(.banner-slide) {
-  min-height: 320px;
+  height: 286px;
 }
 
 .quick-row {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
   gap: 22px;
-  margin-top: 22px;
+  margin-top: 18px;
 }
 
 .quick-card {
-  min-height: 108px;
+  min-height: 112px;
   display: flex;
   align-items: center;
   gap: 22px;
@@ -381,8 +381,8 @@ onMounted(load)
 }
 
 .home-product-section {
-  margin-top: 24px;
-  padding: 20px 22px 24px;
+  margin-top: 18px;
+  padding: 18px 20px 20px;
   border: 1px solid rgba(229, 238, 228, 0.9);
   border-radius: var(--yx-radius-xl);
   background:
@@ -396,7 +396,7 @@ onMounted(load)
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  margin-bottom: 16px;
+  margin-bottom: 14px;
 }
 
 .home-section-title {
@@ -450,7 +450,11 @@ onMounted(load)
 }
 
 .home-product-grid :deep(.product-cover) {
-  aspect-ratio: 1.28;
+  height: 176px;
+  aspect-ratio: auto;
+  object-fit: contain;
+  padding: 10px;
+  background: linear-gradient(135deg, #f3fbef, #fff8ed);
 }
 
 @media (max-width: 900px) {
@@ -480,7 +484,7 @@ onMounted(load)
 
   .home-banner-frame :deep(.home-banner-carousel),
   .home-banner-frame :deep(.banner-slide) {
-    min-height: 300px;
+    height: 280px;
   }
 }
 

@@ -9,6 +9,7 @@
           <div>
             <span class="price">¥{{ money(displayProduct.price) }}</span>
             <span v-if="displayProduct.originalPrice" class="old-price">¥{{ money(displayProduct.originalPrice) }}</span>
+            <p v-if="props.showSales" class="product-sales">已售 {{ salesText }}</p>
           </div>
           <el-button circle type="primary" :icon="Plus" @click.prevent="$emit('add', displayProduct)" />
         </div>
@@ -24,10 +25,16 @@ import type { Product } from '@/types'
 import { getImageUrl, setImageFallback } from '@/utils/media'
 import { normalizeProduct } from '@/utils/product'
 
-const props = defineProps<{ product: Product }>()
+const props = withDefaults(defineProps<{ product: Product; showSales?: boolean }>(), {
+  showSales: false
+})
 defineEmits<{ add: [product: Product] }>()
 
 const displayProduct = computed(() => normalizeProduct(props.product))
 const imageSrc = computed(() => getImageUrl(displayProduct.value))
 const money = (value?: number) => Number(value || 0).toFixed(2)
+const salesText = computed(() => {
+  const sales = Number(displayProduct.value.sales || 0)
+  return sales >= 10000 ? `${(sales / 10000).toFixed(1)}万+` : `${sales || 0}`
+})
 </script>

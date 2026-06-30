@@ -30,8 +30,8 @@ export const productApi = {
   categories: () => http.get<unknown, Category[]>('/api/product/category/list'),
   createCategory: (data: { name: string; parentId?: number; sort?: number; status?: number }) =>
     http.post<unknown, number>('/api/product/category', data),
-  page: (params: { pageNum: number; pageSize: number; categoryId?: number; keyword?: string }) =>
-    http.get<unknown, PageResult<Product>>('/api/product/page', { params }),
+  page: (params: { pageNum: number; pageSize: number; categoryId?: number; keyword?: string; name?: string; status?: number }) =>
+    http.get<unknown, PageResult<Product>>('/api/product/page', { params: { ...params, name: params.name || params.keyword } }),
   detail: (id: number) => http.get<unknown, Product>(`/api/product/${id}`),
   hot: () => http.get<unknown, Product[]>('/api/product/home/hot'),
   create: (data: Partial<Product> & { stock: number }) => http.post<unknown, number>('/api/product', data),
@@ -87,6 +87,7 @@ export const orderApi = {
     http.post<unknown, OrderConfirm>('/api/order/confirm', data),
   create: (data: { source: string; addressId: number; couponId?: number; items: Array<{ productId: number; quantity: number }> }) =>
     http.post<unknown, number>('/api/order', data),
+  detail: (id: number) => http.get<unknown, Order>(`/api/order/${id}`),
   my: (params: { pageNum: number; pageSize: number }) => http.get<unknown, PageResult<Order>>('/api/order/my', { params }),
   adminPage: (params: { pageNum: number; pageSize: number; status?: number }) =>
     http.get<unknown, PageResult<Order>>('/api/order/admin/page', { params }),

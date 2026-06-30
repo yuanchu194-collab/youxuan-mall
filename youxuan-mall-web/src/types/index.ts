@@ -59,6 +59,7 @@ export interface Product {
   stock?: number
   lockedStock?: number
   createTime?: string
+  updateTime?: string
 }
 
 export interface Banner {
@@ -108,15 +109,22 @@ export interface Address {
   district: string
   detailAddress: string
   defaultFlag: number
+  createTime?: string
+  updateTime?: string
 }
 
 export interface Coupon {
   id: number
   name: string
+  couponType?: string
   amount: number
   minAmount: number
   totalStock: number
   availableStock: number
+  receivedCount?: number
+  usedCount?: number
+  perLimit?: number
+  scope?: string
   startTime: string
   endTime: string
   status: number
@@ -172,5 +180,18 @@ export interface Order {
   trackingNo?: string
   deliveryTime?: string
   receiveTime?: string
+  cancelTime?: string
   createTime: string
+  items?: OrderItem[]
+}
+
+export interface OrderItem {
+  id?: number
+  productId: number
+  productName: string
+  productImage?: string
+  mainImage?: string
+  price: number
+  quantity: number
+  totalAmount: number
 }

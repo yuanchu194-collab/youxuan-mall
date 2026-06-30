@@ -1,6 +1,6 @@
 <template>
   <div>
-    <header class="shop-header" :class="{ 'shop-header-home': isHome }">
+    <header class="shop-header" :class="{ 'shop-header-home': isHome, 'shop-header-products': isProducts, 'shop-header-coupons': isCoupons, 'shop-header-cart': isCart, 'shop-header-checkout': isCheckout, 'shop-header-orders': isOrders }">
       <div class="page-shell header-inner">
         <RouterLink to="/" class="brand">
           <span class="brand-mark">优</span>
@@ -10,12 +10,12 @@
           </span>
         </RouterLink>
         <nav class="nav-links">
-          <RouterLink to="/">首页</RouterLink>
-          <RouterLink to="/products">分类</RouterLink>
-          <RouterLink to="/coupons">优惠券</RouterLink>
-          <RouterLink to="/cart">购物车</RouterLink>
-          <RouterLink to="/orders">我的订单</RouterLink>
-          <RouterLink v-if="auth.isAdmin" to="/admin/products">后台管理</RouterLink>
+          <RouterLink to="/" :class="{ 'route-active': isHome }">首页</RouterLink>
+          <RouterLink to="/products" :class="{ 'route-active': isProducts }">分类</RouterLink>
+          <RouterLink to="/coupons" :class="{ 'route-active': isCoupons }">优惠券</RouterLink>
+          <RouterLink to="/cart" :class="{ 'route-active': isCart }">购物车</RouterLink>
+          <RouterLink to="/orders" :class="{ 'route-active': isOrders }">我的订单</RouterLink>
+          <RouterLink v-if="auth.isAdmin" to="/admin/products" :class="{ 'route-active': isAdminSection }">后台管理</RouterLink>
         </nav>
         <div class="header-actions">
           <el-input v-model="keyword" class="header-search" placeholder="搜索商品名称" :prefix-icon="Search" @keyup.enter="goSearch" />
@@ -34,7 +34,7 @@
         </div>
       </div>
     </header>
-    <main class="page-shell main-content">
+    <main class="page-shell main-content" :class="{ 'home-main-content': isHome, 'product-main-content': isProducts, 'coupons-main-content': isCoupons, 'cart-main-content': isCart, 'checkout-main-content': isCheckout, 'orders-main-content': isOrders }">
       <RouterView />
     </main>
   </div>
@@ -51,6 +51,12 @@ const route = useRoute()
 const auth = useAuthStore()
 const keyword = ref('')
 const isHome = computed(() => route.path === '/')
+const isProducts = computed(() => route.path.startsWith('/products'))
+const isCoupons = computed(() => route.path === '/coupons' || route.path === '/my-coupons')
+const isCart = computed(() => route.path === '/cart')
+const isCheckout = computed(() => route.path === '/checkout')
+const isOrders = computed(() => route.path === '/orders' || route.path === '/addresses')
+const isAdminSection = computed(() => route.path.startsWith('/admin'))
 
 const goSearch = () => router.push({ path: '/products', query: { keyword: keyword.value || undefined } })
 const logout = () => {
@@ -70,22 +76,22 @@ const logout = () => {
 }
 
 .header-inner {
-  height: 76px;
+  height: 68px;
   display: flex;
   align-items: center;
-  gap: 24px;
+  gap: 22px;
 }
 
 .brand {
   display: flex;
   align-items: center;
   gap: 12px;
-  min-width: 170px;
+  min-width: 160px;
 }
 
 .brand-mark {
-  width: 38px;
-  height: 38px;
+  width: 34px;
+  height: 34px;
   display: grid;
   place-items: center;
   border-radius: 13px;
@@ -107,24 +113,34 @@ const logout = () => {
 
 .nav-links {
   display: flex;
-  gap: 22px;
+  gap: 24px;
   color: #34483b;
   font-size: 14px;
 }
 
-.nav-links .router-link-active {
+.nav-links .route-active {
   color: var(--primary-dark);
   font-weight: 700;
 }
 
-.shop-header-home .nav-links .router-link-active {
+.shop-header-home .nav-links .route-active,
+.shop-header-products .nav-links .route-active,
+.shop-header-coupons .nav-links .route-active,
+.shop-header-cart .nav-links .route-active,
+.shop-header-checkout .nav-links .route-active,
+.shop-header-orders .nav-links .route-active {
   position: relative;
 }
 
-.shop-header-home .nav-links .router-link-active::after {
+.shop-header-home .nav-links .route-active::after,
+.shop-header-products .nav-links .route-active::after,
+.shop-header-coupons .nav-links .route-active::after,
+.shop-header-cart .nav-links .route-active::after,
+.shop-header-checkout .nav-links .route-active::after,
+.shop-header-orders .nav-links .route-active::after {
   position: absolute;
   right: 0;
-  bottom: -27px;
+  bottom: -24px;
   left: 0;
   height: 3px;
   border-radius: 999px 999px 0 0;
@@ -136,7 +152,7 @@ const logout = () => {
   margin-left: auto;
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 9px;
 }
 
 .header-search {
@@ -144,7 +160,19 @@ const logout = () => {
 }
 
 .shop-header-home .header-search {
-  width: 330px;
+  width: 360px;
+}
+
+.shop-header :deep(.el-input__wrapper) {
+  min-height: 40px;
+  border-radius: 12px;
+}
+
+.shop-header :deep(.el-button) {
+  min-height: 40px;
+  padding-right: 22px;
+  padding-left: 22px;
+  border-radius: 12px;
 }
 
 .user-chip,
@@ -157,7 +185,25 @@ const logout = () => {
 }
 
 .main-content {
-  padding: 24px 0 64px;
+  padding: 18px 0 56px;
+}
+
+.home-main-content {
+  width: min(1480px, calc(100vw - 48px));
+  padding-top: 18px;
+}
+
+.shop-header-products .header-inner,
+.product-main-content,
+.shop-header-coupons .header-inner,
+.coupons-main-content,
+.shop-header-cart .header-inner,
+.cart-main-content,
+.shop-header-checkout .header-inner,
+.checkout-main-content,
+.shop-header-orders .header-inner,
+.orders-main-content {
+  width: min(1480px, calc(100vw - 48px));
 }
 
 @media (max-width: 980px) {
