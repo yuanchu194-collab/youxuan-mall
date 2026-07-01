@@ -18,6 +18,8 @@ public class CouponVO {
     private LocalDateTime startTime;
     private LocalDateTime endTime;
     private Integer status;
+    private String scopeType;
+    private Long categoryId;
     private LocalDateTime createTime;
     private LocalDateTime updateTime;
 
@@ -35,6 +37,8 @@ public class CouponVO {
         vo.setStartTime(coupon.getStartTime());
         vo.setEndTime(coupon.getEndTime());
         vo.setStatus(coupon.getStatus());
+        vo.setScopeType(coupon.getScopeType());
+        vo.setCategoryId(coupon.getCategoryId());
         vo.setCreateTime(coupon.getCreateTime());
         vo.setUpdateTime(coupon.getUpdateTime());
         return vo;
@@ -58,6 +62,10 @@ public class CouponVO {
     public void setEndTime(LocalDateTime endTime) { this.endTime = endTime; }
     public Integer getStatus() { return status; }
     public void setStatus(Integer status) { this.status = status; }
+    public String getScopeType() { return scopeType; }
+    public void setScopeType(String scopeType) { this.scopeType = scopeType; }
+    public Long getCategoryId() { return categoryId; }
+    public void setCategoryId(Long categoryId) { this.categoryId = categoryId; }
     public LocalDateTime getCreateTime() { return createTime; }
     public void setCreateTime(LocalDateTime createTime) { this.createTime = createTime; }
     public LocalDateTime getUpdateTime() { return updateTime; }

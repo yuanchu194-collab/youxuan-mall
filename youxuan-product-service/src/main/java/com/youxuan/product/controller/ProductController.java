@@ -58,8 +58,9 @@ public class ProductController {
                                               @RequestParam(name = "pageSize", defaultValue = "10") Long pageSize,
                                               @RequestParam(name = "name", required = false) String name,
                                               @RequestParam(name = "categoryId", required = false) Long categoryId,
-                                              @RequestParam(name = "status", required = false) Integer status) {
-        return Result.success(productService.page(pageNum, pageSize, name, categoryId, status));
+                                              @RequestParam(name = "status", required = false) Integer status,
+                                              @RequestParam(name = "couponId", required = false) Long couponId) {
+        return Result.success(productService.page(pageNum, pageSize, name, categoryId, status, couponId));
     }
 
     @GetMapping("/home/hot")

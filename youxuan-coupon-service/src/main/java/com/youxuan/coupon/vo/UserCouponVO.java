@@ -21,6 +21,8 @@ public class UserCouponVO {
     private LocalDateTime useTime;
     private LocalDateTime startTime;
     private LocalDateTime endTime;
+    private String scopeType;
+    private Long categoryId;
 
     public static UserCouponVO from(UserCoupon userCoupon, Coupon coupon) {
         UserCouponVO vo = new UserCouponVO();
@@ -36,6 +38,8 @@ public class UserCouponVO {
             vo.setMinAmount(coupon.getMinAmount());
             vo.setStartTime(coupon.getStartTime());
             vo.setEndTime(coupon.getEndTime());
+            vo.setScopeType(coupon.getScopeType());
+            vo.setCategoryId(coupon.getCategoryId());
         } else {
             vo.setCouponName("已失效优惠券");
             vo.setCouponStatus(0);
@@ -65,4 +69,8 @@ public class UserCouponVO {
     public void setStartTime(LocalDateTime startTime) { this.startTime = startTime; }
     public LocalDateTime getEndTime() { return endTime; }
     public void setEndTime(LocalDateTime endTime) { this.endTime = endTime; }
+    public String getScopeType() { return scopeType; }
+    public void setScopeType(String scopeType) { this.scopeType = scopeType; }
+    public Long getCategoryId() { return categoryId; }
+    public void setCategoryId(Long categoryId) { this.categoryId = categoryId; }
 }

@@ -20,7 +20,7 @@ public interface ProductService {
 
     ProductVO detail(Long id);
 
-    PageResult<ProductVO> page(Long pageNum, Long pageSize, String name, Long categoryId, Integer status);
+    PageResult<ProductVO> page(Long pageNum, Long pageSize, String name, Long categoryId, Integer status, Long couponId);
 
     void up(Long id);
 

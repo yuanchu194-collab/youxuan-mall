@@ -31,6 +31,8 @@ public class OrderConfirmServiceImpl implements OrderConfirmService {
     private static final String SOURCE_BUY_NOW = "BUY_NOW";
     private static final int PRODUCT_ON = 1;
     private static final int SUCCESS_CODE = 200;
+    private static final String SCOPE_ALL = "ALL";
+    private static final String SCOPE_CATEGORY = "CATEGORY";
 
     private final ProductClient productClient;
     private final UserAddressClient userAddressClient;
@@ -60,13 +62,14 @@ public class OrderConfirmServiceImpl implements OrderConfirmService {
                 .map(OrderConfirmItemVO::getTotalAmount)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
 
-        List<OrderCouponVO> availableCoupons = unwrap(couponClient.available(totalAmount, userId, role),
+        List<CouponClientVO> amountAvailableCoupons = unwrap(couponClient.available(totalAmount, userId, role),
                 "查询可用优惠券失败")
                 .stream()
-                .map(OrderCouponVO::from)
+                .filter(coupon -> couponAppliesToItems(coupon, items))
                 .toList();
+        List<OrderCouponVO> availableCoupons = amountAvailableCoupons.stream().map(OrderCouponVO::from).toList();
 
-        OrderCouponVO selectedCoupon = resolveSelectedCoupon(request.getCouponId(), availableCoupons);
+        OrderCouponVO selectedCoupon = resolveSelectedCoupon(request.getCouponId(), amountAvailableCoupons, items);
         BigDecimal discountAmount = selectedCoupon == null ? BigDecimal.ZERO : selectedCoupon.getAmount();
         BigDecimal payAmount = totalAmount.subtract(discountAmount);
         if (payAmount.compareTo(BigDecimal.ZERO) < 0) {
@@ -98,14 +101,44 @@ public class OrderConfirmServiceImpl implements OrderConfirmService {
         return OrderConfirmItemVO.from(product, itemRequest.getQuantity());
     }
 
-    private OrderCouponVO resolveSelectedCoupon(Long couponId, List<OrderCouponVO> availableCoupons) {
+    private OrderCouponVO resolveSelectedCoupon(Long couponId, List<CouponClientVO> availableCoupons, List<OrderConfirmItemVO> items) {
         if (couponId == null) {
             return null;
         }
-        return availableCoupons.stream()
-                .filter(coupon -> couponId.equals(coupon.getCouponId()))
+        CouponClientVO selected = availableCoupons.stream()
+                .filter(coupon -> couponId.equals(coupon.getId()))
                 .findFirst()
                 .orElseThrow(() -> new BusinessException(ErrorCode.BUSINESS_ERROR, "优惠券不可用"));
+        validateCouponAppliesToItems(selected, items);
+        return OrderCouponVO.from(selected);
+    }
+
+    private boolean couponAppliesToItems(CouponClientVO coupon, List<OrderConfirmItemVO> items) {
+        try {
+            validateCouponAppliesToItems(coupon, items);
+            return true;
+        } catch (BusinessException exception) {
+            return false;
+        }
+    }
+
+    private void validateCouponAppliesToItems(CouponClientVO coupon, List<OrderConfirmItemVO> items) {
+        String scopeType = coupon.getScopeType() == null ? SCOPE_ALL : coupon.getScopeType();
+        if (SCOPE_ALL.equals(scopeType)) {
+            return;
+        }
+        if (SCOPE_CATEGORY.equals(scopeType)) {
+            Long categoryId = coupon.getCategoryId();
+            if (categoryId == null) {
+                throw new BusinessException(ErrorCode.BUSINESS_ERROR, "优惠券适用分类异常");
+            }
+            boolean allMatched = items.stream().allMatch(item -> categoryId.equals(item.getCategoryId()));
+            if (!allMatched) {
+                throw new BusinessException(ErrorCode.BUSINESS_ERROR, "优惠券不适用于当前商品");
+            }
+            return;
+        }
+        throw new BusinessException(ErrorCode.BUSINESS_ERROR, "优惠券适用范围异常");
     }
 
     private void validateSource(String source) {

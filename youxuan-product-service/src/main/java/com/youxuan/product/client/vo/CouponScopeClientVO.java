@@ -1,16 +1,13 @@
-package com.youxuan.order.client.vo;
-
-import java.math.BigDecimal;
+package com.youxuan.product.client.vo;
 
 /**
- * 接收优惠券服务可用优惠券返回的数据。
+ * 接收优惠券服务返回的适用范围。
  */
-public class CouponClientVO {
+public class CouponScopeClientVO {
 
     private Long id;
     private String name;
-    private BigDecimal amount;
-    private BigDecimal minAmount;
+    private Integer status;
     private String scopeType;
     private Long categoryId;
 
@@ -18,10 +15,8 @@ public class CouponClientVO {
     public void setId(Long id) { this.id = id; }
     public String getName() { return name; }
     public void setName(String name) { this.name = name; }
-    public BigDecimal getAmount() { return amount; }
-    public void setAmount(BigDecimal amount) { this.amount = amount; }
-    public BigDecimal getMinAmount() { return minAmount; }
-    public void setMinAmount(BigDecimal minAmount) { this.minAmount = minAmount; }
+    public Integer getStatus() { return status; }
+    public void setStatus(Integer status) { this.status = status; }
     public String getScopeType() { return scopeType; }
     public void setScopeType(String scopeType) { this.scopeType = scopeType; }
     public Long getCategoryId() { return categoryId; }

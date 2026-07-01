@@ -19,6 +19,8 @@ public class Coupon extends BaseEntity {
     private LocalDateTime startTime;
     private LocalDateTime endTime;
     private Integer status;
+    private String scopeType;
+    private Long categoryId;
 
     public String getName() {
         return name;
@@ -82,5 +84,21 @@ public class Coupon extends BaseEntity {
 
     public void setStatus(Integer status) {
         this.status = status;
+    }
+
+    public String getScopeType() {
+        return scopeType;
+    }
+
+    public void setScopeType(String scopeType) {
+        this.scopeType = scopeType;
+    }
+
+    public Long getCategoryId() {
+        return categoryId;
+    }
+
+    public void setCategoryId(Long categoryId) {
+        this.categoryId = categoryId;
     }
 }

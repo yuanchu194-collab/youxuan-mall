@@ -46,6 +46,10 @@ public class CouponCreateRequest {
     @Max(value = 1, message = "优惠券状态只能是0或1")
     private Integer status = 1;
 
+    private String scopeType = "ALL";
+
+    private Long categoryId;
+
     public String getName() {
         return name;
     }
@@ -108,5 +112,21 @@ public class CouponCreateRequest {
 
     public void setStatus(Integer status) {
         this.status = status;
+    }
+
+    public String getScopeType() {
+        return scopeType;
+    }
+
+    public void setScopeType(String scopeType) {
+        this.scopeType = scopeType;
+    }
+
+    public Long getCategoryId() {
+        return categoryId;
+    }
+
+    public void setCategoryId(Long categoryId) {
+        this.categoryId = categoryId;
     }
 }

@@ -152,6 +152,9 @@ const receivedCouponIds = computed(() => {
 const receivedCount = computed(() => receivedCouponIds.value.size)
 
 const couponScope = (coupon: Coupon) => {
+  if (coupon.scopeType === 'CATEGORY') return '指定分类商品'
+  if (coupon.scopeType === 'ALL') return '全部商品可用'
+  if (coupon.scope) return coupon.scope
   const name = coupon.name || ''
   if (name.includes('新人')) return '新人专享'
   if (name.includes('水果')) return '水果专享'
@@ -165,6 +168,7 @@ const couponScope = (coupon: Coupon) => {
 
 const couponType = (coupon: Coupon) => {
   if (coupon.couponType) return coupon.couponType
+  if (coupon.scopeType === 'CATEGORY') return '品类券'
   if (couponScope(coupon) === '新人专享') return '新人专享'
   if (couponScope(coupon) !== '全场通用') return '品类券'
   return Number(coupon.minAmount || 0) <= 0 ? '无门槛券' : '满减券'
@@ -357,8 +361,8 @@ const openRules = (card: CouponCardItem) => {
   rulesVisible.value = true
 }
 
-const viewProducts = () => {
-  ElMessage.info('当前需要后端提供可用商品接口。')
+const viewProducts = (card: CouponCardItem) => {
+  useCoupon(card.id)
 }
 
 const shareCoupon = () => {

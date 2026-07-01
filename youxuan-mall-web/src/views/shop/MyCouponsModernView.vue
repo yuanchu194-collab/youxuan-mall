@@ -128,6 +128,8 @@ const isExpiringSoon = (endTime?: string) => {
 }
 
 const couponScope = (coupon: UserCoupon) => {
+  if (coupon.scopeType === 'CATEGORY') return '指定分类商品'
+  if (coupon.scopeType === 'ALL') return '全部商品可用'
   const name = coupon.couponName || ''
   if (name.includes('新人')) return '新人专享'
   if (name.includes('水果')) return '水果专享'
@@ -140,6 +142,7 @@ const couponScope = (coupon: UserCoupon) => {
 }
 
 const couponType = (coupon: UserCoupon) => {
+  if (coupon.scopeType === 'CATEGORY') return '品类券'
   const scope = couponScope(coupon)
   if (scope === '新人专享') return '新人专享'
   if (scope !== '全场通用') return '品类券'
@@ -290,8 +293,8 @@ const openGeneralRules = () => {
   rulesVisible.value = true
 }
 
-const viewProducts = () => {
-  ElMessage.info('当前需要后端提供可用商品接口。')
+const viewProducts = (card: CouponCardItem) => {
+  useCoupon(card.id)
 }
 
 const shareCoupon = () => {

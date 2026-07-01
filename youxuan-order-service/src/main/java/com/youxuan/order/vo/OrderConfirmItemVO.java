@@ -9,6 +9,7 @@ import java.math.BigDecimal;
 public class OrderConfirmItemVO {
 
     private Long productId;
+    private Long categoryId;
     private String productName;
     private String mainImage;
     private BigDecimal price;
@@ -20,6 +21,7 @@ public class OrderConfirmItemVO {
     public static OrderConfirmItemVO from(ProductClientVO product, Integer quantity) {
         OrderConfirmItemVO vo = new OrderConfirmItemVO();
         vo.setProductId(product.getId());
+        vo.setCategoryId(product.getCategoryId());
         vo.setProductName(product.getName());
         vo.setMainImage(product.getMainImage());
         vo.setPrice(product.getPrice());
@@ -32,6 +34,8 @@ public class OrderConfirmItemVO {
 
     public Long getProductId() { return productId; }
     public void setProductId(Long productId) { this.productId = productId; }
+    public Long getCategoryId() { return categoryId; }
+    public void setCategoryId(Long categoryId) { this.categoryId = categoryId; }
     public String getProductName() { return productName; }
     public void setProductName(String productName) { this.productName = productName; }
     public String getMainImage() { return mainImage; }

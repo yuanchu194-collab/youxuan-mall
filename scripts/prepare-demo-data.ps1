@@ -162,12 +162,13 @@ INSERT INTO home_recommend (title, product_id, sort, status, deleted) VALUES
 ('整箱饮品', @p31, 7, 1, 0),
 ('日用刚需', @p36, 8, 1, 0);
 
-INSERT INTO coupon (name, amount, min_amount, total_stock, available_stock, start_time, end_time, status, deleted) VALUES
-('新人满50减5', 5.00, 50.00, 200, 200, DATE_SUB(NOW(), INTERVAL 1 DAY), DATE_ADD(NOW(), INTERVAL 30 DAY), 1, 0),
-('满99减10', 10.00, 99.00, 200, 200, DATE_SUB(NOW(), INTERVAL 1 DAY), DATE_ADD(NOW(), INTERVAL 30 DAY), 1, 0),
-('满199减25', 25.00, 199.00, 150, 150, DATE_SUB(NOW(), INTERVAL 1 DAY), DATE_ADD(NOW(), INTERVAL 30 DAY), 1, 0),
-('生鲜专区满129减15', 15.00, 129.00, 150, 150, DATE_SUB(NOW(), INTERVAL 1 DAY), DATE_ADD(NOW(), INTERVAL 30 DAY), 1, 0),
-('全场满299减40', 40.00, 299.00, 100, 100, DATE_SUB(NOW(), INTERVAL 1 DAY), DATE_ADD(NOW(), INTERVAL 30 DAY), 1, 0);
+INSERT INTO coupon (name, amount, min_amount, total_stock, available_stock, start_time, end_time, status, scope_type, category_id, deleted) VALUES
+('新人满50减5', 5.00, 50.00, 200, 200, DATE_SUB(NOW(), INTERVAL 1 DAY), DATE_ADD(NOW(), INTERVAL 30 DAY), 1, 'ALL', NULL, 0),
+('满99减10', 10.00, 99.00, 200, 200, DATE_SUB(NOW(), INTERVAL 1 DAY), DATE_ADD(NOW(), INTERVAL 30 DAY), 1, 'ALL', NULL, 0),
+('满199减25', 25.00, 199.00, 150, 150, DATE_SUB(NOW(), INTERVAL 1 DAY), DATE_ADD(NOW(), INTERVAL 30 DAY), 1, 'ALL', NULL, 0),
+('生鲜专区满129减15', 15.00, 129.00, 150, 150, DATE_SUB(NOW(), INTERVAL 1 DAY), DATE_ADD(NOW(), INTERVAL 30 DAY), 1, 'CATEGORY', @cat_fruit, 0),
+('乳品烘焙满79减8', 8.00, 79.00, 120, 120, DATE_SUB(NOW(), INTERVAL 1 DAY), DATE_ADD(NOW(), INTERVAL 30 DAY), 1, 'CATEGORY', @cat_bakery, 0),
+('全场满299减40', 40.00, 299.00, 100, 100, DATE_SUB(NOW(), INTERVAL 1 DAY), DATE_ADD(NOW(), INTERVAL 30 DAY), 1, 'ALL', NULL, 0);
 
 INSERT INTO user_address (user_id, receiver_name, receiver_phone, province, city, district, detail_address, default_flag, deleted)
 SELECT id, '演示用户', '13800000000', '北京市', '北京市', '朝阳区', '优选商城演示地址 1001 室', 1, 0
@@ -256,7 +257,7 @@ $deleteResult
 
 分类：新鲜水果、时令蔬菜、肉禽蛋品、乳品烘焙、粮油调味、休闲零食、酒水饮料、日用百货。
 
-同时创建：首页 Banner 3 条、首页推荐位 8 条、优惠券 5 张、管理员账号默认收货地址 1 条。
+同时创建：首页 Banner 3 条、首页推荐位 8 条、优惠券 6 张（含全场券和分类券）、管理员账号默认收货地址 1 条。
 
 首页推荐位绑定的 product_id 均来自本脚本刚插入的真实上架商品；不会插入“未命名商品”、乱码商品、网络图片 URL 或本地图片路径。
 

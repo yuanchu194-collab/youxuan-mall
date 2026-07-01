@@ -66,6 +66,8 @@ public class OrderServiceImpl implements OrderService {
     private static final int ORDER_STATUS_CANCELED = 4;
     private static final int PRODUCT_ON = 1;
     private static final int SUCCESS_CODE = 200;
+    private static final String SCOPE_ALL = "ALL";
+    private static final String SCOPE_CATEGORY = "CATEGORY";
     private static final Duration SUBMIT_KEY_TTL = Duration.ofSeconds(10);
 
     private final MallOrderMapper mallOrderMapper;
@@ -119,7 +121,7 @@ public class OrderServiceImpl implements OrderService {
             BigDecimal totalAmount = snapshots.stream()
                     .map(OrderItemSnapshot::totalAmount)
                     .reduce(BigDecimal.ZERO, BigDecimal::add);
-            CouponClientVO selectedCoupon = resolveSelectedCoupon(request.getCouponId(), totalAmount, userId, role);
+            CouponClientVO selectedCoupon = resolveSelectedCoupon(request.getCouponId(), totalAmount, snapshots, userId, role);
             BigDecimal discountAmount = selectedCoupon == null ? BigDecimal.ZERO : selectedCoupon.getAmount();
             BigDecimal payAmount = totalAmount.subtract(discountAmount);
             if (payAmount.compareTo(BigDecimal.ZERO) < 0) {
@@ -324,20 +326,42 @@ public class OrderServiceImpl implements OrderService {
             throw new BusinessException(ErrorCode.BUSINESS_ERROR, "商品价格异常");
         }
         BigDecimal totalAmount = product.getPrice().multiply(BigDecimal.valueOf(itemRequest.getQuantity()));
-        return new OrderItemSnapshot(product.getId(), product.getName(), product.getMainImage(),
+        return new OrderItemSnapshot(product.getId(), product.getCategoryId(), product.getName(), product.getMainImage(),
                 product.getPrice(), itemRequest.getQuantity(), totalAmount);
     }
 
-    private CouponClientVO resolveSelectedCoupon(Long couponId, BigDecimal totalAmount, Long userId, String role) {
+    private CouponClientVO resolveSelectedCoupon(Long couponId, BigDecimal totalAmount, List<OrderItemSnapshot> snapshots,
+                                                 Long userId, String role) {
         if (couponId == null) {
             return null;
         }
         List<CouponClientVO> availableCoupons = unwrap(couponClient.available(totalAmount, userId, role),
                 "查询可用优惠券失败");
-        return availableCoupons.stream()
+        CouponClientVO selected = availableCoupons.stream()
                 .filter(coupon -> couponId.equals(coupon.getId()))
                 .findFirst()
                 .orElseThrow(() -> new BusinessException(ErrorCode.BUSINESS_ERROR, "优惠券不可用"));
+        validateCouponAppliesToSnapshots(selected, snapshots);
+        return selected;
+    }
+
+    private void validateCouponAppliesToSnapshots(CouponClientVO coupon, List<OrderItemSnapshot> snapshots) {
+        String scopeType = coupon.getScopeType() == null ? SCOPE_ALL : coupon.getScopeType();
+        if (SCOPE_ALL.equals(scopeType)) {
+            return;
+        }
+        if (SCOPE_CATEGORY.equals(scopeType)) {
+            Long categoryId = coupon.getCategoryId();
+            if (categoryId == null) {
+                throw new BusinessException(ErrorCode.BUSINESS_ERROR, "优惠券适用分类异常");
+            }
+            boolean allMatched = snapshots.stream().allMatch(snapshot -> categoryId.equals(snapshot.categoryId()));
+            if (!allMatched) {
+                throw new BusinessException(ErrorCode.BUSINESS_ERROR, "优惠券不适用于当前商品");
+            }
+            return;
+        }
+        throw new BusinessException(ErrorCode.BUSINESS_ERROR, "优惠券适用范围异常");
     }
 
     private MallOrder buildOrder(Long userId, Long couponId, UserAddressClientVO address,
@@ -577,7 +601,7 @@ public class OrderServiceImpl implements OrderService {
         return UserContext.getRole() == null ? "USER" : UserContext.getRole();
     }
 
-    private record OrderItemSnapshot(Long productId, String productName, String productImage,
+    private record OrderItemSnapshot(Long productId, Long categoryId, String productName, String productImage,
                                      BigDecimal price, Integer quantity, BigDecimal totalAmount) {
     }
 

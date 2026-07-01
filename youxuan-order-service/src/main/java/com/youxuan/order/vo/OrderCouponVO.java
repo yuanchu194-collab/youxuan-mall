@@ -13,6 +13,8 @@ public class OrderCouponVO {
     private String name;
     private BigDecimal amount;
     private BigDecimal minAmount;
+    private String scopeType;
+    private Long categoryId;
 
     public static OrderCouponVO from(CouponClientVO coupon) {
         OrderCouponVO vo = new OrderCouponVO();
@@ -21,6 +23,8 @@ public class OrderCouponVO {
         vo.setName(coupon.getName());
         vo.setAmount(coupon.getAmount());
         vo.setMinAmount(coupon.getMinAmount());
+        vo.setScopeType(coupon.getScopeType());
+        vo.setCategoryId(coupon.getCategoryId());
         return vo;
     }
 
@@ -34,4 +38,8 @@ public class OrderCouponVO {
     public void setAmount(BigDecimal amount) { this.amount = amount; }
     public BigDecimal getMinAmount() { return minAmount; }
     public void setMinAmount(BigDecimal minAmount) { this.minAmount = minAmount; }
+    public String getScopeType() { return scopeType; }
+    public void setScopeType(String scopeType) { this.scopeType = scopeType; }
+    public Long getCategoryId() { return categoryId; }
+    public void setCategoryId(Long categoryId) { this.categoryId = categoryId; }
 }

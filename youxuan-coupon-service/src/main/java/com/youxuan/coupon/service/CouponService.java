@@ -7,6 +7,7 @@ import com.youxuan.coupon.dto.CouponRestoreRequest;
 import com.youxuan.coupon.dto.CouponUpdateRequest;
 import com.youxuan.coupon.dto.CouponUseRequest;
 import com.youxuan.coupon.vo.CouponVO;
+import com.youxuan.coupon.vo.CouponScopeVO;
 import com.youxuan.coupon.vo.UserCouponVO;
 import java.math.BigDecimal;
 import java.util.List;
@@ -29,6 +30,8 @@ public interface CouponService {
     PageResult<CouponVO> page(Long pageNum, Long pageSize);
 
     PageResult<CouponVO> adminPage(Long pageNum, Long pageSize);
+
+    CouponScopeVO scope(Long couponId);
 
     void preheat(Long couponId);
 

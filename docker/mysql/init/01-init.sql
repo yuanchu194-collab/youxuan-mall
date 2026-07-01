@@ -101,9 +101,12 @@ CREATE TABLE IF NOT EXISTS coupon (
     start_time DATETIME NOT NULL COMMENT '开始时间',
     end_time DATETIME NOT NULL COMMENT '结束时间',
     status TINYINT NOT NULL DEFAULT 1 COMMENT '状态 1启用 0禁用',
+    scope_type VARCHAR(32) NOT NULL DEFAULT 'ALL' COMMENT '适用范围 ALL全部商品 CATEGORY指定分类',
+    category_id BIGINT DEFAULT NULL COMMENT '适用分类ID',
     create_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     update_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    deleted TINYINT NOT NULL DEFAULT 0 COMMENT '逻辑删除'
+    deleted TINYINT NOT NULL DEFAULT 0 COMMENT '逻辑删除',
+    KEY idx_scope_category (scope_type, category_id)
 ) DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='优惠券表';
 
 CREATE TABLE IF NOT EXISTS user_coupon (

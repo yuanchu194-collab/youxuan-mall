@@ -7,6 +7,9 @@ import com.youxuan.common.exception.BusinessException;
 import com.youxuan.common.message.ProductSyncMessage;
 import com.youxuan.common.result.ErrorCode;
 import com.youxuan.common.result.PageResult;
+import com.youxuan.common.result.Result;
+import com.youxuan.product.client.CouponClient;
+import com.youxuan.product.client.vo.CouponScopeClientVO;
 import com.youxuan.product.dto.ProductCreateDTO;
 import com.youxuan.product.dto.ProductUpdateDTO;
 import com.youxuan.product.dto.StockChangeDTO;
@@ -33,23 +36,29 @@ public class ProductServiceImpl implements ProductService {
 
     private static final int STATUS_OFF = 0;
     private static final int STATUS_ON = 1;
+    private static final int SUCCESS_CODE = 200;
+    private static final String SCOPE_ALL = "ALL";
+    private static final String SCOPE_CATEGORY = "CATEGORY";
 
     private final ProductMapper productMapper;
     private final ProductCategoryMapper productCategoryMapper;
     private final ProductStockMapper productStockMapper;
     private final ProductCacheService productCacheService;
     private final ProductSyncProducer productSyncProducer;
+    private final CouponClient couponClient;
 
     public ProductServiceImpl(ProductMapper productMapper,
                               ProductCategoryMapper productCategoryMapper,
                               ProductStockMapper productStockMapper,
                               ProductCacheService productCacheService,
-                              ProductSyncProducer productSyncProducer) {
+                              ProductSyncProducer productSyncProducer,
+                              CouponClient couponClient) {
         this.productMapper = productMapper;
         this.productCategoryMapper = productCategoryMapper;
         this.productStockMapper = productStockMapper;
         this.productCacheService = productCacheService;
         this.productSyncProducer = productSyncProducer;
+        this.couponClient = couponClient;
     }
 
     /**
@@ -126,14 +135,18 @@ public class ProductServiceImpl implements ProductService {
     }
 
     @Override
-    public PageResult<ProductVO> page(Long pageNum, Long pageSize, String name, Long categoryId, Integer status) {
+    public PageResult<ProductVO> page(Long pageNum, Long pageSize, String name, Long categoryId, Integer status, Long couponId) {
         long current = pageNum == null || pageNum < 1 ? 1L : pageNum;
         long size = pageSize == null || pageSize < 1 ? 10L : pageSize;
+        CouponScopeClientVO couponScope = couponId == null ? null : getCouponScope(couponId);
+        Long effectiveCategoryId = resolveCategoryId(categoryId, couponScope);
+        Integer effectiveStatus = couponScope == null ? status : Integer.valueOf(STATUS_ON);
+
         Page<Product> page = productMapper.selectPage(new Page<>(current, size),
                 new LambdaQueryWrapper<Product>()
                         .like(StringUtils.hasText(name), Product::getName, name)
-                        .eq(categoryId != null, Product::getCategoryId, categoryId)
-                        .eq(status != null, Product::getStatus, status)
+                        .eq(effectiveCategoryId != null, Product::getCategoryId, effectiveCategoryId)
+                        .eq(effectiveStatus != null, Product::getStatus, effectiveStatus)
                         .orderByDesc(Product::getId));
         List<ProductVO> records = page.getRecords().stream().map(this::toVO).toList();
         return PageResult.of(page.getTotal(), current, size, records);
@@ -252,6 +265,47 @@ public class ProductServiceImpl implements ProductService {
         return productStockMapper.selectOne(new LambdaQueryWrapper<ProductStock>()
                 .eq(ProductStock::getProductId, productId)
                 .last("LIMIT 1"));
+    }
+
+    private CouponScopeClientVO getCouponScope(Long couponId) {
+        try {
+            Result<CouponScopeClientVO> result = couponClient.scope(couponId);
+            if (result == null) {
+                throw new BusinessException(ErrorCode.BUSINESS_ERROR, "优惠券查询失败");
+            }
+            if (!Integer.valueOf(SUCCESS_CODE).equals(result.getCode())) {
+                throw new BusinessException(result.getCode(), result.getMessage());
+            }
+            if (result.getData() == null) {
+                throw new BusinessException(ErrorCode.NOT_FOUND, "优惠券不存在");
+            }
+            return result.getData();
+        } catch (BusinessException exception) {
+            throw exception;
+        } catch (RuntimeException exception) {
+            throw new BusinessException(ErrorCode.BUSINESS_ERROR, "优惠券查询失败");
+        }
+    }
+
+    private Long resolveCategoryId(Long requestCategoryId, CouponScopeClientVO couponScope) {
+        if (couponScope == null) {
+            return requestCategoryId;
+        }
+        String scopeType = couponScope.getScopeType() == null ? SCOPE_ALL : couponScope.getScopeType();
+        if (SCOPE_ALL.equals(scopeType)) {
+            return requestCategoryId;
+        }
+        if (SCOPE_CATEGORY.equals(scopeType)) {
+            Long couponCategoryId = couponScope.getCategoryId();
+            if (couponCategoryId == null) {
+                throw new BusinessException(ErrorCode.BUSINESS_ERROR, "优惠券适用分类异常");
+            }
+            if (requestCategoryId != null && !requestCategoryId.equals(couponCategoryId)) {
+                throw new BusinessException(ErrorCode.BUSINESS_ERROR, "该优惠券不适用于当前分类");
+            }
+            return couponCategoryId;
+        }
+        throw new BusinessException(ErrorCode.BUSINESS_ERROR, "优惠券适用范围异常");
     }
 
     private ProductVO toVO(Product product) {

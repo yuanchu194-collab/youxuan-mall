@@ -19,6 +19,7 @@ import com.youxuan.coupon.mapper.CouponMapper;
 import com.youxuan.coupon.mapper.UserCouponMapper;
 import com.youxuan.coupon.mq.CouponReceiveProducer;
 import com.youxuan.coupon.service.CouponService;
+import com.youxuan.coupon.vo.CouponScopeVO;
 import com.youxuan.coupon.vo.CouponVO;
 import com.youxuan.coupon.vo.UserCouponVO;
 import java.math.BigDecimal;
@@ -44,6 +45,8 @@ public class CouponServiceImpl implements CouponService {
     private static final int STATUS_ENABLED = 1;
     private static final int STATUS_DISABLED = 0;
     private static final String ROLE_ADMIN = "ADMIN";
+    private static final String SCOPE_ALL = "ALL";
+    private static final String SCOPE_CATEGORY = "CATEGORY";
     private static final int USER_COUPON_UNUSED = 0;
     private static final int USER_COUPON_USED = 1;
     private static final long LUA_SUCCESS = 0L;
@@ -98,6 +101,7 @@ public class CouponServiceImpl implements CouponService {
         coupon.setStartTime(request.getStartTime());
         coupon.setEndTime(request.getEndTime());
         coupon.setStatus(request.getStatus() == null ? STATUS_ENABLED : request.getStatus());
+        fillScope(coupon, request.getScopeType(), request.getCategoryId());
         coupon.setDeleted(0);
         couponMapper.insert(coupon);
         return CouponVO.from(couponMapper.selectById(coupon.getId()));
@@ -140,6 +144,12 @@ public class CouponServiceImpl implements CouponService {
         }
         if (request.getStatus() != null) {
             update.setStatus(request.getStatus());
+        }
+        if (request.getScopeType() != null || request.getCategoryId() != null) {
+            String scopeType = request.getScopeType() == null ? coupon.getScopeType() : request.getScopeType();
+            Long categoryId = request.getScopeType() == null && request.getCategoryId() == null
+                    ? coupon.getCategoryId() : request.getCategoryId();
+            fillScope(update, scopeType, categoryId);
         }
         couponMapper.updateById(update);
         return CouponVO.from(couponMapper.selectById(coupon.getId()));
@@ -226,6 +236,12 @@ public class CouponServiceImpl implements CouponService {
                 new LambdaQueryWrapper<Coupon>().orderByDesc(Coupon::getId));
         List<CouponVO> records = page.getRecords().stream().map(CouponVO::from).toList();
         return PageResult.of(page.getTotal(), current, size, records);
+    }
+
+    @Override
+    public CouponScopeVO scope(Long couponId) {
+        Coupon coupon = getUsableCouponForProductFilter(couponId);
+        return CouponScopeVO.from(coupon);
     }
 
     @Override
@@ -419,7 +435,9 @@ public class CouponServiceImpl implements CouponService {
                 || isChanged(coupon.getTotalStock(), request.getTotalStock())
                 || isChanged(coupon.getAvailableStock(), request.getAvailableStock())
                 || isChanged(coupon.getStartTime(), request.getStartTime())
-                || isChanged(coupon.getEndTime(), request.getEndTime());
+                || isChanged(coupon.getEndTime(), request.getEndTime())
+                || isChanged(coupon.getScopeType(), request.getScopeType())
+                || isChanged(coupon.getCategoryId(), request.getCategoryId());
     }
 
     private boolean hasReceivedCouponSensitiveChange(Coupon coupon, CouponUpdateRequest request) {
@@ -427,7 +445,9 @@ public class CouponServiceImpl implements CouponService {
                 || isChanged(coupon.getMinAmount(), request.getMinAmount())
                 || isChanged(coupon.getTotalStock(), request.getTotalStock())
                 || isChanged(coupon.getAvailableStock(), request.getAvailableStock())
-                || isChanged(coupon.getStartTime(), request.getStartTime());
+                || isChanged(coupon.getStartTime(), request.getStartTime())
+                || isChanged(coupon.getScopeType(), request.getScopeType())
+                || isChanged(coupon.getCategoryId(), request.getCategoryId());
     }
 
     private boolean isChanged(Object oldValue, Object newValue) {
@@ -469,18 +489,46 @@ public class CouponServiceImpl implements CouponService {
         if (couponId == null) {
             throw new BusinessException(ErrorCode.PARAM_ERROR, "优惠券ID不能为空");
         }
-        Coupon coupon = couponMapper.selectById(couponId);
+        Coupon coupon = couponMapper.selectByIdIncludingDeleted(couponId);
         if (coupon == null) {
             throw new BusinessException(ErrorCode.NOT_FOUND, "优惠券不存在");
         }
+        if (Integer.valueOf(1).equals(coupon.getDeleted())) {
+            throw new BusinessException(ErrorCode.BUSINESS_ERROR, "优惠券已删除");
+        }
         if (!Integer.valueOf(STATUS_ENABLED).equals(coupon.getStatus())) {
-            throw new BusinessException(ErrorCode.BUSINESS_ERROR, "优惠券未启用");
+            throw new BusinessException(ErrorCode.BUSINESS_ERROR, "优惠券已下线");
         }
         LocalDateTime now = LocalDateTime.now();
-        if (coupon.getStartTime().isAfter(now) || coupon.getEndTime().isBefore(now)) {
-            throw new BusinessException(ErrorCode.BUSINESS_ERROR, "优惠券不在有效期内");
+        if (coupon.getStartTime().isAfter(now)) {
+            throw new BusinessException(ErrorCode.BUSINESS_ERROR, "优惠券未开始");
+        }
+        if (coupon.getEndTime().isBefore(now)) {
+            throw new BusinessException(ErrorCode.BUSINESS_ERROR, "优惠券已过期");
         }
         return coupon;
+    }
+
+    private Coupon getUsableCouponForProductFilter(Long couponId) {
+        Coupon coupon = getValidCoupon(couponId);
+        if (coupon.getAvailableStock() == null || coupon.getAvailableStock() <= 0) {
+            throw new BusinessException(ErrorCode.BUSINESS_ERROR, "优惠券库存为0");
+        }
+        fillScope(coupon, coupon.getScopeType(), coupon.getCategoryId());
+        return coupon;
+    }
+
+    private void fillScope(Coupon coupon, String rawScopeType, Long categoryId) {
+        String scopeType = rawScopeType == null || rawScopeType.isBlank()
+                ? SCOPE_ALL : rawScopeType.trim().toUpperCase();
+        if (!SCOPE_ALL.equals(scopeType) && !SCOPE_CATEGORY.equals(scopeType)) {
+            throw new BusinessException(ErrorCode.PARAM_ERROR, "优惠券适用范围只能是ALL或CATEGORY");
+        }
+        if (SCOPE_CATEGORY.equals(scopeType) && categoryId == null) {
+            throw new BusinessException(ErrorCode.PARAM_ERROR, "分类券必须选择商品分类");
+        }
+        coupon.setScopeType(scopeType);
+        coupon.setCategoryId(SCOPE_CATEGORY.equals(scopeType) ? categoryId : null);
     }
 
     private void requireAdmin() {

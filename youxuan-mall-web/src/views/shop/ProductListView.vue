@@ -70,13 +70,19 @@
       <section v-if="activeCouponId" class="coupon-use-tip">
         <div>
           <el-icon><Ticket /></el-icon>
-          <span>已带上优惠券 #{{ activeCouponId }}，挑选商品加入购物车后可在结算页选择使用。</span>
+          <span>当前正在查看该优惠券可用商品。</span>
         </div>
-        <small>优惠金额与是否可用以订单确认接口返回为准。</small>
-        <button type="button" @click="clearCouponParam">移除</button>
+        <small>优惠券 #{{ activeCouponId }}，最终适用结果以订单确认接口为准。</small>
+        <button type="button" @click="clearCouponParam">清除优惠券筛选</button>
       </section>
 
       <section v-loading="loading" class="product-list-panel">
+        <div v-if="couponFilterError" class="coupon-filter-error">
+          <el-icon><Ticket /></el-icon>
+          <span>{{ couponFilterError }}</span>
+          <button type="button" @click="clearCouponParam">返回普通商品列表</button>
+        </div>
+
         <div class="sort-bar">
           <div class="sort-tabs">
             <button
@@ -114,8 +120,8 @@
           <ProductCard v-for="product in products" :key="product.id" :product="product" show-sales @add="addCart" />
         </div>
         <div v-else class="empty-state product-empty">
-          <strong>没有找到匹配商品</strong>
-          <span>换个分类、关键词或价格区间再试试</span>
+          <strong>{{ couponFilterError ? '优惠券暂不可用' : '没有找到匹配商品' }}</strong>
+          <span>{{ couponFilterError || '换个分类、关键词或价格区间再试试' }}</span>
         </div>
 
         <div class="pager-wrap">
@@ -167,6 +173,8 @@ const categories = ref<Category[]>([])
 const products = ref<Product[]>([])
 const total = ref(0)
 const loading = ref(false)
+const couponFilterError = ref('')
+const syncedCouponId = ref('')
 const query = reactive({
   keyword: '',
   categoryId: undefined as number | undefined,
@@ -228,6 +236,7 @@ const rememberCouponId = (couponId: string) => {
 const syncRoute = () => {
   query.keyword = routeKeyword()
   query.categoryId = routeCategoryId()
+  syncedCouponId.value = routeCouponId()
 }
 
 const updateRoute = () =>
@@ -251,8 +260,8 @@ const clearCouponParam = () => {
   })
 }
 
-const shouldUseSearch = computed(
-  () => Boolean(query.keyword || query.minPrice !== undefined || query.maxPrice !== undefined || query.sortKey !== 'default')
+const shouldUseSearch = computed(() =>
+  Boolean(!activeCouponId.value && (query.keyword || query.minPrice !== undefined || query.maxPrice !== undefined || query.sortKey !== 'default'))
 )
 
 const searchPayload = () => {
@@ -281,6 +290,7 @@ const searchPayload = () => {
 
 const load = async () => {
   loading.value = true
+  couponFilterError.value = ''
   try {
     const data = shouldUseSearch.value
       ? await searchApi.product(searchPayload())
@@ -288,10 +298,20 @@ const load = async () => {
           pageNum: query.pageNum,
           pageSize: query.pageSize,
           categoryId: query.categoryId,
-          keyword: query.keyword || undefined
+          keyword: query.keyword || undefined,
+          status: activeCouponId.value ? 1 : undefined,
+          couponId: activeCouponId.value || undefined
         })
     products.value = normalizeProducts(data.records || []).filter((product) => product.id > 0 && product.name)
     total.value = data.total || 0
+  } catch (error) {
+    if (activeCouponId.value) {
+      couponFilterError.value = error instanceof Error ? error.message : '优惠券可用商品加载失败'
+      products.value = []
+      total.value = 0
+      return
+    }
+    throw error
   } finally {
     loading.value = false
   }
@@ -345,13 +365,15 @@ const addCart = async (product: Product) => {
 }
 
 watch(
-  () => [route.query.keyword, route.query.categoryId],
+  () => [route.query.keyword, route.query.categoryId, route.query.couponId],
   async () => {
     const nextKeyword = routeKeyword()
     const nextCategoryId = routeCategoryId()
-    if (nextKeyword === query.keyword && nextCategoryId === query.categoryId) return
+    const nextCouponId = routeCouponId()
+    if (nextKeyword === query.keyword && nextCategoryId === query.categoryId && nextCouponId === syncedCouponId.value) return
     query.keyword = nextKeyword
     query.categoryId = nextCategoryId
+    syncedCouponId.value = nextCouponId
     query.pageNum = 1
     await load()
   }
@@ -635,6 +657,28 @@ onMounted(async () => {
 .product-list-panel {
   min-height: 520px;
   margin-top: 14px;
+}
+
+.coupon-filter-error {
+  min-height: 46px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+  padding: 10px 14px;
+  border: 1px solid #f2d4bd;
+  border-radius: 12px;
+  background: #fff7f3;
+  color: #c6531f;
+}
+
+.coupon-filter-error button {
+  margin-left: auto;
+  border: 0;
+  color: #168736;
+  background: transparent;
+  font-weight: 900;
+  cursor: pointer;
 }
 
 .sort-bar {

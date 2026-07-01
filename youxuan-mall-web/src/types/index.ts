@@ -126,6 +126,8 @@ export interface Coupon {
   usedCount?: number
   perLimit?: number
   scope?: string
+  scopeType?: 'ALL' | 'CATEGORY' | string
+  categoryId?: number
   startTime: string
   endTime: string
   status: number
@@ -142,6 +144,8 @@ export interface UserCoupon {
   receiveTime: string
   useTime?: string
   orderId?: number
+  scopeType?: 'ALL' | 'CATEGORY' | string
+  categoryId?: number
   startTime?: string
   endTime?: string
 }

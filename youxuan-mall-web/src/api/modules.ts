@@ -30,7 +30,7 @@ export const productApi = {
   categories: () => http.get<unknown, Category[]>('/api/product/category/list'),
   createCategory: (data: { name: string; parentId?: number; sort?: number; status?: number }) =>
     http.post<unknown, number>('/api/product/category', data),
-  page: (params: { pageNum: number; pageSize: number; categoryId?: number; keyword?: string; name?: string; status?: number }) =>
+  page: (params: { pageNum: number; pageSize: number; categoryId?: number; keyword?: string; name?: string; status?: number; couponId?: number | string }) =>
     http.get<unknown, PageResult<Product>>('/api/product/page', { params: { ...params, name: params.name || params.keyword } }),
   detail: (id: number) => http.get<unknown, Product>(`/api/product/${id}`),
   hot: () => http.get<unknown, Product[]>('/api/product/home/hot'),
@@ -77,7 +77,7 @@ export const addressApi = {
 export const couponApi = {
   page: (params: { pageNum: number; pageSize: number }) => http.get<unknown, PageResult<Coupon>>('/api/coupon/page', { params }),
   adminPage: (params: { pageNum: number; pageSize: number }) => http.get<unknown, PageResult<Coupon>>('/api/coupon/admin/page', { params }),
-  create: (data: Omit<Coupon, 'id'>) => http.post<unknown, number>('/api/coupon', data),
+  create: (data: Omit<Coupon, 'id'>) => http.post<unknown, Coupon>('/api/coupon', data),
   update: (id: number, data: Partial<Omit<Coupon, 'id'>>) => http.put<unknown, Coupon>(`/api/coupon/${id}`, data),
   up: (id: number) => http.put<unknown, void>(`/api/coupon/${id}/up`),
   down: (id: number) => http.put<unknown, void>(`/api/coupon/${id}/down`),

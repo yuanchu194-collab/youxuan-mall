@@ -7,6 +7,7 @@ import com.youxuan.coupon.dto.CouponRestoreRequest;
 import com.youxuan.coupon.dto.CouponUpdateRequest;
 import com.youxuan.coupon.dto.CouponUseRequest;
 import com.youxuan.coupon.service.CouponService;
+import com.youxuan.coupon.vo.CouponScopeVO;
 import com.youxuan.coupon.vo.CouponVO;
 import com.youxuan.coupon.vo.UserCouponVO;
 import jakarta.validation.Valid;
@@ -75,6 +76,11 @@ public class CouponController {
     public Result<PageResult<CouponVO>> adminPage(@RequestParam(name = "pageNum", defaultValue = "1") Long pageNum,
                                                   @RequestParam(name = "pageSize", defaultValue = "10") Long pageSize) {
         return Result.success(couponService.adminPage(pageNum, pageSize));
+    }
+
+    @GetMapping("/{id:\\d+}/scope")
+    public Result<CouponScopeVO> scope(@PathVariable("id") Long id) {
+        return Result.success(couponService.scope(id));
     }
 
     @PostMapping("/{id:\\d+}/preheat")

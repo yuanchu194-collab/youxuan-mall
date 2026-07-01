@@ -88,6 +88,9 @@
         <el-table-column label="门槛条件" min-width="135">
           <template #default="{ row }">{{ thresholdFullText(row) }}</template>
         </el-table-column>
+        <el-table-column label="适用范围" min-width="150">
+          <template #default="{ row }">{{ couponScopeText(row) }}</template>
+        </el-table-column>
         <el-table-column label="总库存" min-width="105">
           <template #default="{ row }">{{ numberText(row.totalStock) }}</template>
         </el-table-column>
@@ -184,11 +187,17 @@
               <el-radio-button :value="0">下线</el-radio-button>
             </el-radio-group>
           </el-form-item>
-          <el-form-item label="适用范围" prop="scope">
-            <el-select v-model="form.scope" placeholder="请选择适用范围">
-              <el-option label="全场通用" value="全场通用" />
-              <el-option label="指定商品" value="指定商品" />
-              <el-option label="指定分类" value="指定分类" />
+          <el-form-item label="适用范围" prop="scopeType">
+            <el-radio-group v-model="form.scopeType" @change="changeScope">
+              <el-radio-button value="ALL">全部商品</el-radio-button>
+              <el-radio-button value="CATEGORY">指定分类</el-radio-button>
+            </el-radio-group>
+          </el-form-item>
+        </div>
+        <div v-if="form.scopeType === 'CATEGORY'" class="form-grid two">
+          <el-form-item label="适用分类" prop="categoryId">
+            <el-select v-model="form.categoryId" placeholder="请选择商品分类" filterable>
+              <el-option v-for="item in categories" :key="item.id" :label="categoryName(item)" :value="item.id" />
             </el-select>
           </el-form-item>
         </div>
@@ -205,10 +214,11 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from 'element-plus'
 import { Clock, CloseBold, Plus, RefreshLeft, Search, Ticket, Tickets } from '@element-plus/icons-vue'
-import { couponApi } from '@/api/modules'
-import type { Coupon } from '@/types'
+import { couponApi, productApi } from '@/api/modules'
+import type { Category, Coupon } from '@/types'
 
 type CouponStatusKey = 'active' | 'expiring' | 'expired' | 'offline' | 'upcoming'
+type CouponScopeType = 'ALL' | 'CATEGORY'
 
 interface CouponForm {
   id?: number
@@ -221,10 +231,12 @@ interface CouponForm {
   perLimit: number
   range?: [string, string]
   status: number
-  scope: string
+  scopeType: CouponScopeType
+  categoryId?: number
 }
 
 const coupons = ref<Coupon[]>([])
+const categories = ref<Category[]>([])
 const total = ref(0)
 const dialog = ref(false)
 const loading = ref(false)
@@ -248,7 +260,8 @@ const emptyForm = (): CouponForm => ({
   perLimit: 1,
   range: undefined,
   status: 1,
-  scope: '全场通用'
+  scopeType: 'ALL',
+  categoryId: undefined
 })
 const form = reactive<CouponForm>(emptyForm())
 
@@ -263,12 +276,18 @@ const validateRange = (_rule: unknown, value: [string, string] | undefined, call
   callback()
 }
 
+const validateCategory = (_rule: unknown, value: number | undefined, callback: (error?: Error) => void) => {
+  if (form.scopeType === 'CATEGORY' && !value) return callback(new Error('请选择适用分类'))
+  callback()
+}
+
 const rules: FormRules = {
   name: [{ required: true, message: '名称不能为空', trigger: 'blur' }],
   amount: [{ type: 'number', min: 0.01, message: '优惠金额必须大于 0', trigger: 'change' }],
   minAmount: [{ type: 'number', min: 0, message: '使用门槛不能小于 0', trigger: 'change' }],
   totalStock: [{ type: 'number', min: 0, message: '库存不能小于 0', trigger: 'change' }],
-  range: [{ validator: validateRange, trigger: 'change' }]
+  range: [{ validator: validateRange, trigger: 'change' }],
+  categoryId: [{ validator: validateCategory, trigger: 'change' }]
 }
 
 const now = () => Date.now()
@@ -323,6 +342,14 @@ const formatTime = (value?: string) => {
   if (!value) return '-'
   return value.replace('T', ' ').slice(0, 19)
 }
+const categoryName = (item?: Category) => item?.name || item?.categoryName || '商品分类'
+const couponScopeText = (coupon: Coupon) => {
+  if (coupon.scopeType === 'CATEGORY') {
+    const category = categories.value.find((item) => item.id === coupon.categoryId)
+    return category ? `指定分类：${categoryName(category)}` : `指定分类 #${coupon.categoryId || '-'}`
+  }
+  return '全部商品'
+}
 
 const filteredCoupons = computed(() =>
   coupons.value.filter((coupon) => {
@@ -356,6 +383,9 @@ const load = async () => {
   } finally {
     loading.value = false
   }
+}
+const loadCategories = async () => {
+  categories.value = await productApi.categories()
 }
 const search = async () => {
   query.pageNum = 1
@@ -392,10 +422,17 @@ const openEdit = (row: Coupon) => {
     perLimit: row.perLimit || 1,
     range: [formatTime(row.startTime), formatTime(row.endTime)],
     status: row.status,
-    scope: row.scope || '全场通用'
+    scopeType: row.scopeType === 'CATEGORY' ? 'CATEGORY' : 'ALL',
+    categoryId: row.categoryId
   })
   formRef.value?.clearValidate()
   dialog.value = true
+}
+const changeScope = () => {
+  if (form.scopeType !== 'CATEGORY') {
+    form.categoryId = undefined
+    formRef.value?.clearValidate('categoryId')
+  }
 }
 const save = async () => {
   if (!formRef.value) return
@@ -410,7 +447,9 @@ const save = async () => {
       availableStock: form.id ? form.availableStock : form.totalStock,
       startTime: form.range?.[0] || '',
       endTime: form.range?.[1] || '',
-      status: form.status
+      status: form.status,
+      scopeType: form.scopeType,
+      categoryId: form.scopeType === 'CATEGORY' ? form.categoryId : undefined
     }
     if (form.id) {
       await couponApi.update(form.id, payload)
@@ -474,7 +513,9 @@ const remove = async (row: Coupon) => {
   await load()
 }
 
-onMounted(load)
+onMounted(async () => {
+  await Promise.all([load(), loadCategories()])
+})
 </script>
 
 <style scoped>
