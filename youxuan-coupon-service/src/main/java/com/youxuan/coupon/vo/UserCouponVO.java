@@ -13,6 +13,7 @@ public class UserCouponVO {
     private Long userCouponId;
     private Long couponId;
     private String couponName;
+    private Integer couponStatus;
     private BigDecimal amount;
     private BigDecimal minAmount;
     private Integer status;
@@ -30,10 +31,14 @@ public class UserCouponVO {
         vo.setUseTime(userCoupon.getUseTime());
         if (coupon != null) {
             vo.setCouponName(coupon.getName());
+            vo.setCouponStatus(coupon.getStatus());
             vo.setAmount(coupon.getAmount());
             vo.setMinAmount(coupon.getMinAmount());
             vo.setStartTime(coupon.getStartTime());
             vo.setEndTime(coupon.getEndTime());
+        } else {
+            vo.setCouponName("已失效优惠券");
+            vo.setCouponStatus(0);
         }
         return vo;
     }
@@ -44,6 +49,8 @@ public class UserCouponVO {
     public void setCouponId(Long couponId) { this.couponId = couponId; }
     public String getCouponName() { return couponName; }
     public void setCouponName(String couponName) { this.couponName = couponName; }
+    public Integer getCouponStatus() { return couponStatus; }
+    public void setCouponStatus(Integer couponStatus) { this.couponStatus = couponStatus; }
     public BigDecimal getAmount() { return amount; }
     public void setAmount(BigDecimal amount) { this.amount = amount; }
     public BigDecimal getMinAmount() { return minAmount; }

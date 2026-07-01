@@ -35,3 +35,8 @@ export const normalizeProduct = <T extends object>(product: T | null | undefined
 }
 
 export const normalizeProducts = <T extends object>(products: T[] = []) => products.map(normalizeProduct)
+
+export const productIdOf = (product: Partial<Product> | null | undefined) => {
+  const id = toNumber(product?.id ?? product?.productId)
+  return id > 0 ? id : undefined
+}

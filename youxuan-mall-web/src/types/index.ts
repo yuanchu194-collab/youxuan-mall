@@ -115,6 +115,7 @@ export interface Address {
 
 export interface Coupon {
   id: number
+  couponId?: number
   name: string
   couponType?: string
   amount: number
@@ -134,6 +135,7 @@ export interface UserCoupon {
   userCouponId: number
   couponId: number
   couponName: string
+  couponStatus?: number
   amount: number
   minAmount: number
   status: number

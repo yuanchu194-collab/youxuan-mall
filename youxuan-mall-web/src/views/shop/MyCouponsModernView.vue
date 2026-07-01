@@ -148,13 +148,13 @@ const couponType = (coupon: UserCoupon) => {
 
 const resolveState = (coupon: UserCoupon): CouponCardState => {
   if (Number(coupon.status) === 1) return 'used'
-  if (Number(coupon.status) === 2 || isExpiredByTime(coupon.endTime)) return 'expired'
+  if (Number(coupon.status) === 2 || Number(coupon.couponStatus) !== 1 || isExpiredByTime(coupon.endTime)) return 'expired'
   return isExpiringSoon(coupon.endTime) ? 'expiring' : 'usable'
 }
 
 const stateText = (state: CouponCardState) => {
   if (state === 'used') return '已使用'
-  if (state === 'expired') return '已过期'
+  if (state === 'expired') return '不可用 / 已失效'
   if (state === 'expiring') return '即将过期'
   return '未使用'
 }

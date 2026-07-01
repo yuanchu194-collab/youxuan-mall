@@ -157,7 +157,7 @@ import {
 import ProductCard from '@/components/ProductCard.vue'
 import { cartApi, productApi, searchApi } from '@/api/modules'
 import type { Category, Product } from '@/types'
-import { normalizeProducts } from '@/utils/product'
+import { normalizeProducts, productIdOf } from '@/utils/product'
 
 type SortKey = 'default' | 'sales' | 'price' | 'newest' | 'review'
 
@@ -335,7 +335,12 @@ const changePage = async (page: number) => {
 }
 
 const addCart = async (product: Product) => {
-  await cartApi.add({ productId: product.id, quantity: 1 })
+  const productId = productIdOf(product)
+  if (!productId) {
+    ElMessage.error('商品数据缺少ID，暂不能加入购物车')
+    return
+  }
+  await cartApi.add({ productId, quantity: 1 })
   ElMessage.success('已加入购物车')
 }
 

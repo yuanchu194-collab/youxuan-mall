@@ -207,7 +207,6 @@ import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from 'elem
 import { Clock, CloseBold, Plus, RefreshLeft, Search, Ticket, Tickets } from '@element-plus/icons-vue'
 import { couponApi } from '@/api/modules'
 import type { Coupon } from '@/types'
-import { showBackendTodo } from '@/utils/feature'
 
 type CouponStatusKey = 'active' | 'expiring' | 'expired' | 'offline' | 'upcoming'
 
@@ -253,9 +252,14 @@ const emptyForm = (): CouponForm => ({
 })
 const form = reactive<CouponForm>(emptyForm())
 
+const parseDateTime = (value: string) => new Date(value.replace(/-/g, '/')).getTime()
+
 const validateRange = (_rule: unknown, value: [string, string] | undefined, callback: (error?: Error) => void) => {
   if (!value?.[0] || !value?.[1]) return callback(new Error('请选择开始时间和结束时间'))
-  if (new Date(value[1]).getTime() <= new Date(value[0]).getTime()) return callback(new Error('结束时间必须晚于开始时间'))
+  const start = parseDateTime(value[0])
+  const end = parseDateTime(value[1])
+  if (!Number.isFinite(start) || !Number.isFinite(end)) return callback(new Error('时间格式不正确'))
+  if (end <= start) return callback(new Error('结束时间必须晚于开始时间'))
   callback()
 }
 
@@ -346,7 +350,7 @@ const stats = computed(() => [
 const load = async () => {
   loading.value = true
   try {
-    const data = await couponApi.page(query)
+    const data = await couponApi.adminPage(query)
     coupons.value = data.records || []
     total.value = data.total || 0
   } finally {
@@ -396,23 +400,27 @@ const openEdit = (row: Coupon) => {
 const save = async () => {
   if (!formRef.value) return
   await formRef.value.validate()
-  if (form.id) {
-    showBackendTodo('编辑优惠券')
-    return
-  }
   saving.value = true
   try {
-    await couponApi.create({
+    const payload = {
       name: form.name,
       amount: form.amount,
       minAmount: form.minAmount,
       totalStock: form.totalStock,
-      availableStock: form.totalStock,
+      availableStock: form.id ? form.availableStock : form.totalStock,
       startTime: form.range?.[0] || '',
       endTime: form.range?.[1] || '',
       status: form.status
-    })
-    ElMessage.success('优惠券已新增')
+    }
+    if (form.id) {
+      await couponApi.update(form.id, payload)
+      ElMessage.success('优惠券已更新')
+    } else {
+      await couponApi.create({
+        ...payload
+      })
+      ElMessage.success('优惠券已新增')
+    }
     dialog.value = false
     await load()
   } finally {
@@ -443,11 +451,17 @@ const toggle = async (row: Coupon) => {
   } catch {
     return
   }
-  showBackendTodo(`${action}优惠券`)
+  if (row.status === 1) {
+    await couponApi.down(row.id)
+  } else {
+    await couponApi.up(row.id)
+  }
+  ElMessage.success(`优惠券已${action}`)
+  await load()
 }
 const remove = async (row: Coupon) => {
   try {
-    await ElMessageBox.confirm(`确认删除优惠券「${row.name}」吗？删除后不可恢复。`, '删除优惠券', {
+    await ElMessageBox.confirm(`确认删除优惠券「${row.name}」吗？已被领取的优惠券不能删除，请改为下线。`, '删除优惠券', {
       confirmButtonText: '确认删除',
       cancelButtonText: '取消',
       type: 'warning'
@@ -455,7 +469,9 @@ const remove = async (row: Coupon) => {
   } catch {
     return
   }
-  showBackendTodo('删除优惠券')
+  await couponApi.remove(row.id)
+  ElMessage.success('优惠券已删除')
+  await load()
 }
 
 onMounted(load)

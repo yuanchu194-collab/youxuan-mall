@@ -215,7 +215,7 @@ import { useAuthStore } from '@/stores/auth'
 import type { Product } from '@/types'
 import { showBackendTodo } from '@/utils/feature'
 import { getImageUrl, setImageFallback } from '@/utils/media'
-import { normalizeProduct, normalizeProducts } from '@/utils/product'
+import { normalizeProduct, normalizeProducts, productIdOf } from '@/utils/product'
 
 type ProductWithGallery = Product & Record<string, unknown>
 
@@ -281,7 +281,12 @@ const addCart = async () => {
     ElMessage.warning('当前商品库存不足')
     return false
   }
-  await cartApi.add({ productId: product.value.id, quantity: quantity.value })
+  const productId = productIdOf(product.value)
+  if (!productId) {
+    ElMessage.error('商品数据缺少ID，暂不能加入购物车')
+    return false
+  }
+  await cartApi.add({ productId, quantity: quantity.value })
   ElMessage.success('已加入购物车')
   return true
 }
@@ -295,7 +300,12 @@ const buyNow = async () => {
 
 const addRecommendCart = async (item: Product) => {
   if (!ensureLogin()) return
-  await cartApi.add({ productId: item.id, quantity: 1 })
+  const productId = productIdOf(item)
+  if (!productId) {
+    ElMessage.error('商品数据缺少ID，暂不能加入购物车')
+    return
+  }
+  await cartApi.add({ productId, quantity: 1 })
   ElMessage.success('已加入购物车')
 }
 

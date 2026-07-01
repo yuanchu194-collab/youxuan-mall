@@ -76,10 +76,16 @@ export const addressApi = {
 
 export const couponApi = {
   page: (params: { pageNum: number; pageSize: number }) => http.get<unknown, PageResult<Coupon>>('/api/coupon/page', { params }),
+  adminPage: (params: { pageNum: number; pageSize: number }) => http.get<unknown, PageResult<Coupon>>('/api/coupon/admin/page', { params }),
   create: (data: Omit<Coupon, 'id'>) => http.post<unknown, number>('/api/coupon', data),
+  update: (id: number, data: Partial<Omit<Coupon, 'id'>>) => http.put<unknown, Coupon>(`/api/coupon/${id}`, data),
+  up: (id: number) => http.put<unknown, void>(`/api/coupon/${id}/up`),
+  down: (id: number) => http.put<unknown, void>(`/api/coupon/${id}/down`),
+  remove: (id: number) => http.delete<unknown, void>(`/api/coupon/${id}`),
   preheat: (id: number) => http.post<unknown, void>(`/api/coupon/${id}/preheat`),
   receive: (id: number) => http.post<unknown, void>(`/api/coupon/${id}/receive`),
-  my: () => http.get<unknown, UserCoupon[]>('/api/coupon/my')
+  my: () => http.get<unknown, UserCoupon[]>('/api/coupon/my'),
+  available: (amount: number) => http.get<unknown, Coupon[]>('/api/coupon/available', { params: { amount } })
 }
 
 export const orderApi = {

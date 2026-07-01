@@ -1,6 +1,6 @@
 <template>
   <article class="product-card">
-    <RouterLink :to="`/products/${displayProduct.id}`">
+    <RouterLink :to="productLink">
       <img class="product-cover" :src="imageSrc" :alt="displayProduct.name" @error="setImageFallback" />
       <div class="product-info">
         <h3 class="product-name">{{ displayProduct.name }}</h3>
@@ -11,7 +11,7 @@
             <span v-if="displayProduct.originalPrice" class="old-price">¥{{ money(displayProduct.originalPrice) }}</span>
             <p v-if="props.showSales" class="product-sales">已售 {{ salesText }}</p>
           </div>
-          <el-button circle type="primary" :icon="Plus" @click.prevent="$emit('add', displayProduct)" />
+          <el-button circle type="primary" :icon="Plus" :disabled="!productId" @click.prevent="$emit('add', displayProduct)" />
         </div>
       </div>
     </RouterLink>
@@ -23,7 +23,7 @@ import { computed } from 'vue'
 import { Plus } from '@element-plus/icons-vue'
 import type { Product } from '@/types'
 import { getImageUrl, setImageFallback } from '@/utils/media'
-import { normalizeProduct } from '@/utils/product'
+import { normalizeProduct, productIdOf } from '@/utils/product'
 
 const props = withDefaults(defineProps<{ product: Product; showSales?: boolean }>(), {
   showSales: false
@@ -31,6 +31,8 @@ const props = withDefaults(defineProps<{ product: Product; showSales?: boolean }
 defineEmits<{ add: [product: Product] }>()
 
 const displayProduct = computed(() => normalizeProduct(props.product))
+const productId = computed(() => productIdOf(displayProduct.value))
+const productLink = computed(() => (productId.value ? `/products/${productId.value}` : '/products'))
 const imageSrc = computed(() => getImageUrl(displayProduct.value))
 const money = (value?: number) => Number(value || 0).toFixed(2)
 const salesText = computed(() => {

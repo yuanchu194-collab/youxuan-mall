@@ -113,7 +113,7 @@ import HomeBannerCarousel from '@/components/HomeBannerCarousel.vue'
 import ProductCard from '@/components/ProductCard.vue'
 import { cartApi, homeApi } from '@/api/modules'
 import type { Category, Product, Banner } from '@/types'
-import { normalizeProducts } from '@/utils/product'
+import { normalizeProducts, productIdOf } from '@/utils/product'
 
 const banners = ref<Banner[]>([])
 const categories = ref<Category[]>([])
@@ -167,7 +167,12 @@ const load = async () => {
 }
 
 const addCart = async (product: Product) => {
-  await cartApi.add({ productId: product.id, quantity: 1 })
+  const productId = productIdOf(product)
+  if (!productId) {
+    ElMessage.error('商品数据缺少ID，暂不能加入购物车')
+    return
+  }
+  await cartApi.add({ productId, quantity: 1 })
   ElMessage.success('已加入购物车')
 }
 

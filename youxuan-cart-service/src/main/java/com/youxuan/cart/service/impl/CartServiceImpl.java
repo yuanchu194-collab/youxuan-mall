@@ -41,24 +41,34 @@ public class CartServiceImpl implements CartService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public CartItemVO add(CartAddRequest request) {
+        if (request == null) {
+            throw new BusinessException(ErrorCode.PARAM_ERROR, "请求体不能为空");
+        }
         Long userId = currentUserId();
-        ProductClientVO product = getProduct(request.getProductId());
+        Long productId = request.getProductId();
+        int quantity = validateQuantity(request.getQuantity());
+        ProductClientVO product = getProduct(productId);
+        validateCanAdd(product, quantity);
 
-        CartItem existingItem = cartItemMapper.selectOne(new LambdaQueryWrapper<CartItem>()
-                .eq(CartItem::getUserId, userId)
-                .eq(CartItem::getProductId, request.getProductId())
-                .last("LIMIT 1"));
+        CartItem existingItem = cartItemMapper.selectByUserIdAndProductIdIncludingDeleted(userId, productId);
         if (existingItem != null) {
-            existingItem.setQuantity(existingItem.getQuantity() + request.getQuantity());
+            int currentQuantity = Integer.valueOf(1).equals(existingItem.getDeleted()) ? 0 : safeQuantity(existingItem.getQuantity());
+            int nextQuantity = currentQuantity + quantity;
+            validateCanAdd(product, nextQuantity);
+            existingItem.setQuantity(nextQuantity);
             existingItem.setChecked(CHECKED);
-            cartItemMapper.updateById(existingItem);
-            return toVO(existingItem, product);
+            existingItem.setDeleted(0);
+            int updated = cartItemMapper.restoreById(existingItem.getId(), nextQuantity, CHECKED);
+            if (updated == 0) {
+                throw new BusinessException(ErrorCode.BUSINESS_ERROR, "购物车更新失败");
+            }
+            return toVO(cartItemMapper.selectById(existingItem.getId()), product);
         }
 
         CartItem cartItem = new CartItem();
         cartItem.setUserId(userId);
-        cartItem.setProductId(request.getProductId());
-        cartItem.setQuantity(request.getQuantity());
+        cartItem.setProductId(productId);
+        cartItem.setQuantity(quantity);
         cartItem.setChecked(CHECKED);
         cartItem.setDeleted(0);
         cartItemMapper.insert(cartItem);
@@ -150,10 +160,11 @@ public class CartServiceImpl implements CartService {
         vo.setChecked(cartItem.getChecked());
         vo.setStock(product.getStock());
         vo.setStatus(product.getStatus());
-        vo.setTotalAmount(product.getPrice().multiply(BigDecimal.valueOf(cartItem.getQuantity())));
+        int quantity = safeQuantity(cartItem.getQuantity());
+        vo.setTotalAmount(product.getPrice().multiply(BigDecimal.valueOf(quantity)));
 
         boolean offShelf = !Integer.valueOf(PRODUCT_ON).equals(product.getStatus());
-        boolean stockInsufficient = product.getStock() == null || product.getStock() < cartItem.getQuantity();
+        boolean stockInsufficient = product.getStock() == null || product.getStock() < quantity;
         vo.setOffShelf(offShelf);
         vo.setStockInsufficient(stockInsufficient);
         if (offShelf) {
@@ -170,14 +181,44 @@ public class CartServiceImpl implements CartService {
         }
         Result<ProductClientVO> result = productClient.detail(productId);
         if (result == null || !Integer.valueOf(200).equals(result.getCode()) || result.getData() == null) {
-            String message = result == null ? "商品不存在" : result.getMessage();
+            String message = result == null || result.getMessage() == null || result.getMessage().isBlank()
+                    ? "商品不存在" : result.getMessage();
             throw new BusinessException(ErrorCode.BUSINESS_ERROR, message);
         }
         ProductClientVO product = result.getData();
+        if (product.getId() == null) {
+            throw new BusinessException(ErrorCode.BUSINESS_ERROR, "商品数据异常：商品ID为空");
+        }
+        if (product.getName() == null || product.getName().isBlank()) {
+            throw new BusinessException(ErrorCode.BUSINESS_ERROR, "商品数据异常：商品名称为空");
+        }
         if (product.getPrice() == null) {
             throw new BusinessException(ErrorCode.BUSINESS_ERROR, "商品价格异常");
         }
         return product;
+    }
+
+    private int validateQuantity(Integer quantity) {
+        if (quantity == null || quantity < 1) {
+            throw new BusinessException(ErrorCode.PARAM_ERROR, "商品数量必须大于0");
+        }
+        return quantity;
+    }
+
+    private int safeQuantity(Integer quantity) {
+        return quantity == null || quantity < 0 ? 0 : quantity;
+    }
+
+    private void validateCanAdd(ProductClientVO product, Integer quantity) {
+        if (product.getStatus() == null) {
+            throw new BusinessException(ErrorCode.BUSINESS_ERROR, "商品状态异常");
+        }
+        if (!Integer.valueOf(PRODUCT_ON).equals(product.getStatus())) {
+            throw new BusinessException(ErrorCode.BUSINESS_ERROR, "商品已下架");
+        }
+        if (product.getStock() == null || product.getStock() < quantity) {
+            throw new BusinessException(ErrorCode.BUSINESS_ERROR, "商品库存不足");
+        }
     }
 
     private Long currentUserId() {

@@ -8,6 +8,7 @@ import java.math.BigDecimal;
  */
 public class OrderCouponVO {
 
+    private Long id;
     private Long couponId;
     private String name;
     private BigDecimal amount;
@@ -15,6 +16,7 @@ public class OrderCouponVO {
 
     public static OrderCouponVO from(CouponClientVO coupon) {
         OrderCouponVO vo = new OrderCouponVO();
+        vo.setId(coupon.getId());
         vo.setCouponId(coupon.getId());
         vo.setName(coupon.getName());
         vo.setAmount(coupon.getAmount());
@@ -22,6 +24,8 @@ public class OrderCouponVO {
         return vo;
     }
 
+    public Long getId() { return id; }
+    public void setId(Long id) { this.id = id; }
     public Long getCouponId() { return couponId; }
     public void setCouponId(Long couponId) { this.couponId = couponId; }
     public String getName() { return name; }

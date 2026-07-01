@@ -4,6 +4,7 @@ import com.youxuan.common.message.CouponReceiveMessage;
 import com.youxuan.common.result.PageResult;
 import com.youxuan.coupon.dto.CouponCreateRequest;
 import com.youxuan.coupon.dto.CouponRestoreRequest;
+import com.youxuan.coupon.dto.CouponUpdateRequest;
 import com.youxuan.coupon.dto.CouponUseRequest;
 import com.youxuan.coupon.vo.CouponVO;
 import com.youxuan.coupon.vo.UserCouponVO;
@@ -17,7 +18,17 @@ public interface CouponService {
 
     CouponVO create(CouponCreateRequest request);
 
+    CouponVO update(Long couponId, CouponUpdateRequest request);
+
+    void up(Long couponId);
+
+    void down(Long couponId);
+
+    void delete(Long couponId);
+
     PageResult<CouponVO> page(Long pageNum, Long pageSize);
+
+    PageResult<CouponVO> adminPage(Long pageNum, Long pageSize);
 
     void preheat(Long couponId);
 

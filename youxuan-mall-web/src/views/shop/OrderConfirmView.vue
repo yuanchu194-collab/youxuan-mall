@@ -175,29 +175,31 @@
               <b>- ¥{{ money(selectedCoupon.amount) }}</b>
               <el-icon><CircleCheckFilled /></el-icon>
             </button>
-            <button
-              v-else-if="firstCoupon"
-              type="button"
-              class="coupon-choice"
-              @click="selectCoupon(firstCoupon.id)"
-            >
-              <span>
-                <strong>{{ firstCoupon.name }}</strong>
-                <em>满{{ money(firstCoupon.minAmount) }}元可用</em>
-              </span>
-              <b>- ¥{{ money(firstCoupon.amount) }}</b>
-            </button>
-            <button v-else type="button" class="coupon-choice disabled" @click="todo('优惠券选择')">
+
+            <div v-if="selectableCoupons.length" class="coupon-list">
+              <button
+                v-for="coupon in selectableCoupons"
+                :key="couponKey(coupon)"
+                type="button"
+                class="coupon-choice"
+                @click="selectCoupon(couponKey(coupon))"
+              >
+                <span>
+                  <strong>{{ coupon.name }}</strong>
+                  <em>满{{ money(coupon.minAmount) }}元可用</em>
+                </span>
+                <b>- ¥{{ money(coupon.amount) }}</b>
+              </button>
+            </div>
+
+            <button v-if="!selectedCoupon && !selectableCoupons.length" type="button" class="coupon-choice disabled" disabled>
               <span>
                 <strong>暂无可用优惠券</strong>
                 <em>可用券以订单确认接口返回为准</em>
               </span>
               <b>0张可用</b>
             </button>
-            <button type="button" class="more-line" @click="todo('优惠券选择')">
-              更多优惠券 <span>{{ availableCoupons.length }}张可用</span>
-              <el-icon><ArrowRight /></el-icon>
-            </button>
+            <p class="coupon-source">已按当前商品总额查询 {{ availableCoupons.length }} 张真实可用券</p>
           </section>
 
           <section class="side-card invoice-card">
@@ -291,8 +293,8 @@ import {
   Van,
   Wallet
 } from '@element-plus/icons-vue'
-import { addressApi, cartApi, orderApi } from '@/api/modules'
-import type { Address, OrderConfirm, OrderConfirmItem } from '@/types'
+import { addressApi, cartApi, couponApi, orderApi } from '@/api/modules'
+import type { Address, Coupon, OrderConfirm, OrderConfirmItem } from '@/types'
 import { showBackendTodo } from '@/utils/feature'
 import { getImageUrl, setImageFallback } from '@/utils/media'
 import { normalizeProduct } from '@/utils/product'
@@ -301,6 +303,7 @@ const route = useRoute()
 const router = useRouter()
 const confirm = ref<OrderConfirm>()
 const addresses = ref<Address[]>([])
+const queriedAvailableCoupons = ref<Coupon[]>([])
 const selectedAddressId = ref<number>()
 const couponId = ref<number>()
 const requestItems = ref<Array<{ productId: number; quantity: number }>>([])
@@ -324,12 +327,23 @@ const deliveryOptions = [
 ]
 
 const confirmItems = computed(() => confirm.value?.items || [])
-const availableCoupons = computed(() => confirm.value?.availableCoupons || [])
-const selectedCoupon = computed(() => confirm.value?.selectedCoupon)
-const firstCoupon = computed(() => availableCoupons.value.find((coupon) => coupon.id !== couponId.value))
+const confirmCoupons = computed(() => confirm.value?.availableCoupons || [])
+const availableCoupons = computed(() => queriedAvailableCoupons.value.length ? queriedAvailableCoupons.value : confirmCoupons.value)
+const selectedCoupon = computed(() => {
+  if (confirm.value?.selectedCoupon) {
+    return confirm.value.selectedCoupon
+  }
+  return availableCoupons.value.find((coupon) => couponKey(coupon) === couponId.value)
+})
+const selectableCoupons = computed(() =>
+  availableCoupons.value.filter((coupon) => {
+    const id = couponKey(coupon)
+    return id !== undefined && id !== couponId.value
+  })
+)
 const totalAmount = computed(() => confirm.value?.totalAmount ?? confirmItems.value.reduce((sum, item) => sum + Number(item.totalAmount || 0), 0))
 const discountAmount = computed(() => Number(confirm.value?.discountAmount || 0))
-const couponAmount = computed(() => Number(selectedCoupon.value?.amount || discountAmount.value || 0))
+const couponAmount = computed(() => discountAmount.value)
 const freightAmount = computed(() => 0)
 const payAmount = computed(() => Math.max(Number(confirm.value?.payAmount ?? totalAmount.value - discountAmount.value + freightAmount.value), 0))
 const submitDisabled = computed(() => !requestItems.value.length || !selectedAddressId.value || !confirmItems.value.length)
@@ -343,6 +357,10 @@ const productSpec = (item: OrderConfirmItem) => {
 const fullAddress = (address: Address) => `${address.province}${address.city}${address.district}${address.detailAddress}`
 const maskPhone = (phone = '') => phone.replace(/^(\d{3})\d{4}(\d+)/, '$1 **** $2')
 const todo = (feature: string) => showBackendTodo(feature)
+const couponKey = (coupon?: Coupon) => {
+  const value = Number(coupon?.id ?? coupon?.couponId)
+  return Number.isFinite(value) && value > 0 ? value : undefined
+}
 
 const routeCouponId = () => {
   const raw = route.query.couponId
@@ -357,7 +375,8 @@ const selectAddress = async (address: Address) => {
   await loadConfirm()
 }
 
-const selectCoupon = async (id: number) => {
+const selectCoupon = async (id?: number) => {
+  if (!id) return
   couponId.value = id
   window.sessionStorage.setItem('youxuan_selected_coupon_id', String(id))
   await loadConfirm()
@@ -402,14 +421,40 @@ const loadAddresses = async () => {
 const loadConfirm = async () => {
   if (!requestItems.value.length || !selectedAddressId.value) {
     confirm.value = undefined
+    queriedAvailableCoupons.value = []
     return
   }
-  confirm.value = await orderApi.confirm({
-    source: source.value,
-    addressId: selectedAddressId.value,
-    couponId: couponId.value,
-    items: requestItems.value
-  })
+  let nextConfirm: OrderConfirm
+  try {
+    nextConfirm = await orderApi.confirm({
+      source: source.value,
+      addressId: selectedAddressId.value,
+      couponId: couponId.value,
+      items: requestItems.value
+    })
+  } catch (error) {
+    if (!couponId.value) {
+      throw error
+    }
+    couponId.value = undefined
+    window.sessionStorage.removeItem('youxuan_selected_coupon_id')
+    ElMessage.warning('当前优惠券不可用，已按无券金额重新确认')
+    nextConfirm = await orderApi.confirm({
+      source: source.value,
+      addressId: selectedAddressId.value,
+      items: requestItems.value
+    })
+  }
+  confirm.value = nextConfirm
+  await loadAvailableCoupons(Number(nextConfirm.totalAmount || 0))
+}
+
+const loadAvailableCoupons = async (amount: number) => {
+  try {
+    queriedAvailableCoupons.value = await couponApi.available(amount)
+  } catch {
+    queriedAvailableCoupons.value = []
+  }
 }
 
 const bootstrap = async () => {
@@ -956,6 +1001,19 @@ onMounted(bootstrap)
 
 .coupon-choice .el-icon {
   color: #2e9947;
+}
+
+.coupon-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.coupon-source {
+  margin: 10px 0 0;
+  color: #7c8780;
+  font-size: 12px;
+  line-height: 1.5;
 }
 
 .more-line {
