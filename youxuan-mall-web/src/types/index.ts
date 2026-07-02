@@ -58,8 +58,38 @@ export interface Product {
   status: number
   stock?: number
   lockedStock?: number
+  collected?: boolean
+  isFavorite?: boolean
   createTime?: string
   updateTime?: string
+}
+
+export interface FavoriteProduct {
+  productId: number
+  id?: number
+  name: string
+  price: number
+  mainImage?: string
+  stock?: number
+  status: number
+  categoryName?: string
+  collectedTime?: string
+}
+
+export interface ProductReview {
+  id: number
+  productId: number
+  userId: number
+  username: string
+  rating: number
+  content: string
+  createTime: string
+}
+
+export interface ProductReviewSummary {
+  avgRating: number
+  reviewCount: number
+  ratingCount: Record<string, number>
 }
 
 export interface Banner {

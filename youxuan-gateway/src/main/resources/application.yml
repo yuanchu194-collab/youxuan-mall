@@ -41,6 +41,12 @@ spring:
             - Path=/api/product/**
           filters:
             - StripPrefix=2
+        - id: youxuan-product-favorites
+          uri: lb://youxuan-product-service
+          predicates:
+            - Path=/api/favorites/**
+          filters:
+            - StripPrefix=1
         - id: youxuan-search-service
           uri: lb://youxuan-search-service
           predicates:
@@ -93,5 +99,6 @@ youxuan:
         - "GET:/api/product/home/hot"
         - "GET:/api/product/page"
         - "GET:/api/product/*"
+        - "GET:/api/product/*/reviews/**"
         - "POST:/api/search/product"
         - "GET:/api/coupon/page"

@@ -13,7 +13,7 @@
         <RouterLink to="/orders" class="active"><el-icon><Tickets /></el-icon>我的订单</RouterLink>
         <RouterLink to="/cart"><el-icon><ShoppingCart /></el-icon>我的购物车</RouterLink>
         <RouterLink to="/my-coupons"><el-icon><Ticket /></el-icon>我的优惠券</RouterLink>
-        <button type="button" @click="todo('我的收藏')"><el-icon><Star /></el-icon>我的收藏</button>
+        <RouterLink to="/favorites"><el-icon><Star /></el-icon>我的收藏</RouterLink>
         <RouterLink to="/addresses"><el-icon><Location /></el-icon>收货地址</RouterLink>
         <button type="button" @click="todo('浏览足迹')"><el-icon><Clock /></el-icon>浏览足迹</button>
         <button type="button" @click="todo('售后管理')"><el-icon><Service /></el-icon>售后管理</button>

@@ -20,7 +20,7 @@
         </h2>
         <nav aria-label="个人中心">
           <RouterLink to="/orders"><el-icon><Notebook /></el-icon>我的订单</RouterLink>
-          <button type="button" @click="todo('我的收藏')"><el-icon><Star /></el-icon>我的收藏</button>
+          <RouterLink to="/favorites"><el-icon><Star /></el-icon>我的收藏</RouterLink>
           <RouterLink to="/addresses"><el-icon><Location /></el-icon>收货地址</RouterLink>
           <RouterLink to="/my-coupons" class="active"><el-icon><Ticket /></el-icon>我的优惠券</RouterLink>
           <button type="button" @click="todo('我的余额')"><el-icon><Wallet /></el-icon>我的余额</button>

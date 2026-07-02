@@ -61,7 +61,15 @@
         </RouterLink>
       </div>
       <div v-if="hotProducts.length" class="home-product-grid">
-        <ProductCard v-for="product in hotProducts" :key="product.id" :product="product" @add="addCart" />
+        <ProductCard
+          v-for="product in hotProducts"
+          :key="product.id"
+          :product="product"
+          :favorited="favoriteIds.has(product.id)"
+          :favorite-busy="favoriteBusyIds.has(product.id)"
+          @add="addCart"
+          @favorite-toggle="handleFavoriteToggle"
+        />
       </div>
       <div v-else class="empty-state">暂无热门商品，请先在后台新增商品</div>
     </section>
@@ -83,7 +91,15 @@
         </RouterLink>
       </div>
       <div v-if="recommendProducts.length" class="home-product-grid">
-        <ProductCard v-for="product in recommendProducts" :key="product.id" :product="product" @add="addCart" />
+        <ProductCard
+          v-for="product in recommendProducts"
+          :key="product.id"
+          :product="product"
+          :favorited="favoriteIds.has(product.id)"
+          :favorite-busy="favoriteBusyIds.has(product.id)"
+          @add="addCart"
+          @favorite-toggle="handleFavoriteToggle"
+        />
       </div>
       <div v-else class="empty-state">暂无推荐商品，请先配置首页推荐位</div>
     </section>
@@ -91,7 +107,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref, type Component } from 'vue'
+import { computed, onMounted, ref, watch, type Component } from 'vue'
 import { ElMessage } from 'element-plus'
 import {
   Apple,
@@ -111,7 +127,8 @@ import {
 } from '@element-plus/icons-vue'
 import HomeBannerCarousel from '@/components/HomeBannerCarousel.vue'
 import ProductCard from '@/components/ProductCard.vue'
-import { cartApi, homeApi } from '@/api/modules'
+import { cartApi, favoriteApi, homeApi } from '@/api/modules'
+import { useAuthStore } from '@/stores/auth'
 import type { Category, Product, Banner } from '@/types'
 import { normalizeProducts, productIdOf } from '@/utils/product'
 
@@ -119,6 +136,9 @@ const banners = ref<Banner[]>([])
 const categories = ref<Category[]>([])
 const hotProducts = ref<Product[]>([])
 const recommendProducts = ref<Product[]>([])
+const favoriteIds = ref(new Set<number>())
+const favoriteBusyIds = ref(new Set<number>())
+const auth = useAuthStore()
 const loading = ref(false)
 const quickItems = [
   { icon: Tickets, title: '优惠券中心', desc: '领券更优惠', action: '立即领取', to: '/coupons', tone: 'coupon' },
@@ -159,6 +179,7 @@ const load = async () => {
     categories.value = data.categories || []
     hotProducts.value = cleanProducts(data.hotProducts || [])
     recommendProducts.value = cleanProducts(data.recommendProducts || [])
+    await syncFavoriteStates()
   } catch (error) {
     ElMessage.error('首页数据加载失败，请检查 Gateway 和 home-service')
   } finally {
@@ -176,6 +197,85 @@ const addCart = async (product: Product) => {
   ElMessage.success('已加入购物车')
 }
 
+const markFavoriteBusy = (productId: number, busy: boolean) => {
+  const next = new Set(favoriteBusyIds.value)
+  if (busy) {
+    next.add(productId)
+  } else {
+    next.delete(productId)
+  }
+  favoriteBusyIds.value = next
+}
+
+const setFavorite = (productId: number, favorited: boolean) => {
+  const next = new Set(favoriteIds.value)
+  if (favorited) {
+    next.add(productId)
+  } else {
+    next.delete(productId)
+  }
+  favoriteIds.value = next
+  // Sync state into product arrays so ProductCard picks it up
+  hotProducts.value = hotProducts.value.map((p) =>
+    p.id === productId ? { ...p, collected: favorited, isFavorite: favorited } : p
+  )
+  recommendProducts.value = recommendProducts.value.map((p) =>
+    p.id === productId ? { ...p, collected: favorited, isFavorite: favorited } : p
+  )
+}
+
+const syncFavoriteStates = async () => {
+  const allProducts = [...hotProducts.value, ...recommendProducts.value]
+  const productIds = allProducts.map((product) => productIdOf(product)).filter((id): id is number => Boolean(id))
+  if (!auth.isLogin || !productIds.length) {
+    favoriteIds.value = new Set()
+    hotProducts.value = hotProducts.value.map((p) => ({ ...p, collected: false, isFavorite: false }))
+    recommendProducts.value = recommendProducts.value.map((p) => ({ ...p, collected: false, isFavorite: false }))
+    return
+  }
+  try {
+    const collectedProductIds = new Set(await favoriteApi.checkBatch(productIds))
+    favoriteIds.value = collectedProductIds
+    hotProducts.value = hotProducts.value.map((p) => ({
+      ...p,
+      collected: collectedProductIds.has(p.id),
+      isFavorite: collectedProductIds.has(p.id)
+    }))
+    recommendProducts.value = recommendProducts.value.map((p) => ({
+      ...p,
+      collected: collectedProductIds.has(p.id),
+      isFavorite: collectedProductIds.has(p.id)
+    }))
+  } catch {
+    favoriteIds.value = new Set()
+  }
+}
+
+const handleFavoriteToggle = async (product: Product) => {
+  const productId = productIdOf(product)
+  if (!productId) {
+    ElMessage.error('商品数据缺少ID，暂不能收藏')
+    return
+  }
+  markFavoriteBusy(productId, true)
+  try {
+    if (favoriteIds.value.has(productId)) {
+      await favoriteApi.cancel(productId)
+      setFavorite(productId, false)
+      ElMessage.success('已取消收藏')
+    } else {
+      await favoriteApi.collect(productId)
+      setFavorite(productId, true)
+      ElMessage.success('已收藏')
+    }
+  } catch {
+    ElMessage.error('操作失败，请稍后重试')
+  } finally {
+    markFavoriteBusy(productId, false)
+  }
+}
+
+watch(() => auth.token, () => syncFavoriteStates())
 onMounted(load)
 </script>
 

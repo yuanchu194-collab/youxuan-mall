@@ -44,7 +44,8 @@
             <span class="stars">
               <el-icon v-for="index in 5" :key="index"><StarFilled /></el-icon>
             </span>
-            <span>4.9分</span>
+            <span>{{ displayAvgRating }}分</span>
+            <span>{{ reviewSummary.reviewCount || 0 }} 条评价</span>
             <span>{{ salesText }} 件已售</span>
             <span>库存 {{ stockText }}</span>
           </div>
@@ -92,6 +93,14 @@
           <div class="action-row">
             <el-button size="large" :icon="ShoppingCart" :disabled="!canBuy" @click="addCart">加入购物车</el-button>
             <el-button size="large" type="primary" :disabled="!canBuy" @click="buyNow">立即购买</el-button>
+            <el-button
+              size="large"
+              :icon="favorited ? StarFilled : Star"
+              :loading="favoriteLoading"
+              @click="toggleFavorite"
+            >
+              {{ favorited ? '已收藏' : '收藏' }}
+            </el-button>
           </div>
         </section>
 
@@ -177,6 +186,66 @@
               </div>
             </div>
           </el-tab-pane>
+          <el-tab-pane :label="`商品评价 (${reviewSummary.reviewCount || 0})`" name="reviews">
+            <section class="review-section">
+              <div class="review-summary">
+                <div class="review-score">
+                  <strong>{{ displayAvgRating }}</strong>
+                  <el-rate :model-value="reviewSummary.avgRating" disabled allow-half />
+                  <span>{{ reviewSummary.reviewCount || 0 }} 条评价</span>
+                </div>
+                <div class="rating-breakdown">
+                  <div v-for="item in ratingBreakdown" :key="item.star" class="rating-breakdown-row">
+                    <span>{{ item.star }}星</span>
+                    <div><i :style="{ width: `${item.percent}%` }"></i></div>
+                    <em>{{ item.count }}</em>
+                  </div>
+                </div>
+              </div>
+
+              <div class="review-form">
+                <h3>发表评价</h3>
+                <template v-if="auth.isLogin">
+                  <el-rate v-model="reviewForm.rating" />
+                  <el-input
+                    v-model.trim="reviewForm.content"
+                    type="textarea"
+                    :rows="3"
+                    maxlength="500"
+                    show-word-limit
+                    placeholder="分享这件商品的真实体验"
+                  />
+                  <el-button type="primary" :loading="reviewSubmitting" @click="submitReview">提交评价</el-button>
+                </template>
+                <div v-else class="review-login-tip">
+                  <span>登录后可以发表评价</span>
+                  <el-button type="primary" plain @click="promptReviewLogin">去登录</el-button>
+                </div>
+              </div>
+
+              <div v-loading="reviewsLoading" class="review-list">
+                <article v-for="item in reviews" :key="item.id" class="review-item">
+                  <div class="review-item-head">
+                    <strong>{{ item.username || `用户${item.userId}` }}</strong>
+                    <el-rate :model-value="item.rating" disabled />
+                    <span>{{ formatTime(item.createTime) }}</span>
+                  </div>
+                  <p>{{ item.content }}</p>
+                </article>
+                <div v-if="!reviewsLoading && !reviews.length" class="empty-state review-empty">暂无评价，期待你的第一条真实体验。</div>
+                <el-pagination
+                  v-if="reviewTotal > reviewQuery.pageSize"
+                  small
+                  background
+                  layout="prev, pager, next"
+                  :current-page="reviewQuery.pageNum"
+                  :page-size="reviewQuery.pageSize"
+                  :total="reviewTotal"
+                  @current-change="changeReviewPage"
+                />
+              </div>
+            </section>
+          </el-tab-pane>
         </el-tabs>
       </section>
 
@@ -186,7 +255,15 @@
           <RouterLink to="/products">查看更多</RouterLink>
         </div>
         <div v-if="recommendProducts.length" class="recommend-list">
-          <ProductCard v-for="item in recommendProducts" :key="item.id" :product="item" @add="addRecommendCart" />
+          <ProductCard
+            v-for="item in recommendProducts"
+            :key="item.id"
+            :product="item"
+            :favorited="recommendFavoriteIds.has(item.id)"
+            :favorite-busy="recommendFavoriteBusyIds.has(item.id)"
+            @add="addRecommendCart"
+            @favorite-toggle="handleRecommendFavoriteToggle"
+          />
         </div>
         <div v-else class="empty-state recommend-empty">暂无推荐商品</div>
       </aside>
@@ -195,7 +272,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import {
@@ -206,13 +283,14 @@ import {
   RefreshLeft,
   Service,
   ShoppingCart,
+  Star,
   StarFilled,
   Van
 } from '@element-plus/icons-vue'
 import ProductCard from '@/components/ProductCard.vue'
-import { cartApi, productApi } from '@/api/modules'
+import { cartApi, favoriteApi, productApi, reviewApi } from '@/api/modules'
 import { useAuthStore } from '@/stores/auth'
-import type { Product } from '@/types'
+import type { Product, ProductReview, ProductReviewSummary } from '@/types'
 import { showBackendTodo } from '@/utils/feature'
 import { getImageUrl, setImageFallback } from '@/utils/media'
 import { normalizeProduct, normalizeProducts, productIdOf } from '@/utils/product'
@@ -224,10 +302,21 @@ const router = useRouter()
 const auth = useAuthStore()
 const product = ref<ProductWithGallery>()
 const recommendProducts = ref<Product[]>([])
+const recommendFavoriteIds = ref(new Set<number>())
+const recommendFavoriteBusyIds = ref(new Set<number>())
 const activeImage = ref('')
 const activeTab = ref('detail')
 const quantity = ref(1)
 const loading = ref(false)
+const favorited = ref(false)
+const favoriteLoading = ref(false)
+const reviews = ref<ProductReview[]>([])
+const reviewSummary = ref<ProductReviewSummary>({ avgRating: 0, reviewCount: 0, ratingCount: {} })
+const reviewTotal = ref(0)
+const reviewsLoading = ref(false)
+const reviewSubmitting = ref(false)
+const reviewQuery = reactive({ pageNum: 1, pageSize: 5 })
+const reviewForm = reactive({ rating: 5, content: '' })
 
 const protections = [
   { title: '品质保证', desc: '优选生鲜，严选好物', icon: CircleCheck },
@@ -251,6 +340,14 @@ const discountText = computed(() => {
   return `${((price / original) * 10).toFixed(1)}折`
 })
 const todo = (feature: string) => showBackendTodo(feature)
+const displayAvgRating = computed(() => Number(reviewSummary.value.avgRating || 0).toFixed(1))
+const ratingBreakdown = computed(() => {
+  const total = Number(reviewSummary.value.reviewCount || 0)
+  return [5, 4, 3, 2, 1].map((star) => {
+    const count = Number(reviewSummary.value.ratingCount?.[star] || reviewSummary.value.ratingCount?.[String(star)] || 0)
+    return { star, count, percent: total ? Math.round((count / total) * 100) : 0 }
+  })
+})
 
 const collectImages = (current: ProductWithGallery) => {
   const rawImages = [current.images, current.imageList, current.productImages, current.gallery]
@@ -273,6 +370,18 @@ const ensureLogin = () => {
   ElMessage.warning('请先登录后再加入购物车')
   router.push({ path: '/login', query: { redirect: route.fullPath } })
   return false
+}
+
+const ensureLoginForFavorite = () => {
+  if (auth.isLogin) return true
+  ElMessage.warning('请先登录后再收藏商品')
+  router.push({ path: '/login', query: { redirect: route.fullPath } })
+  return false
+}
+
+const promptReviewLogin = () => {
+  ElMessage.warning('请先登录后再发表评价')
+  router.push({ path: '/login', query: { redirect: route.fullPath } })
 }
 
 const addCart = async () => {
@@ -309,15 +418,189 @@ const addRecommendCart = async (item: Product) => {
   ElMessage.success('已加入购物车')
 }
 
+const loadFavoriteState = async (productId: number) => {
+  if (!auth.isLogin) {
+    favorited.value = false
+    return
+  }
+  try {
+    favorited.value = Boolean(await favoriteApi.check(productId))
+  } catch {
+    favorited.value = false
+  }
+}
+
+const toggleFavorite = async () => {
+  if (!product.value || !ensureLoginForFavorite()) return
+  const productId = productIdOf(product.value)
+  if (!productId) {
+    ElMessage.error('商品数据缺少ID，暂不能收藏')
+    return
+  }
+  favoriteLoading.value = true
+  try {
+    if (favorited.value) {
+      await favoriteApi.cancel(productId)
+      favorited.value = false
+      ElMessage.success('已取消收藏')
+    } else {
+      await favoriteApi.collect(productId)
+      favorited.value = true
+      ElMessage.success('已收藏')
+    }
+  } finally {
+    favoriteLoading.value = false
+  }
+}
+
+const markRecommendFavoriteBusy = (productId: number, busy: boolean) => {
+  const next = new Set(recommendFavoriteBusyIds.value)
+  if (busy) {
+    next.add(productId)
+  } else {
+    next.delete(productId)
+  }
+  recommendFavoriteBusyIds.value = next
+}
+
+const setRecommendFavorite = (productId: number, favorited: boolean) => {
+  const next = new Set(recommendFavoriteIds.value)
+  if (favorited) {
+    next.add(productId)
+  } else {
+    next.delete(productId)
+  }
+  recommendFavoriteIds.value = next
+  recommendProducts.value = recommendProducts.value.map((p) =>
+    p.id === productId ? { ...p, collected: favorited, isFavorite: favorited } : p
+  )
+}
+
+const syncRecommendFavoriteStates = async () => {
+  const productIds = recommendProducts.value
+    .map((p) => productIdOf(p))
+    .filter((id): id is number => Boolean(id))
+  if (!auth.isLogin || !productIds.length) {
+    recommendFavoriteIds.value = new Set()
+    recommendProducts.value = recommendProducts.value.map((p) => ({ ...p, collected: false, isFavorite: false }))
+    return
+  }
+  try {
+    const collectedProductIds = new Set(await favoriteApi.checkBatch(productIds))
+    recommendFavoriteIds.value = collectedProductIds
+    recommendProducts.value = recommendProducts.value.map((p) => ({
+      ...p,
+      collected: collectedProductIds.has(p.id),
+      isFavorite: collectedProductIds.has(p.id)
+    }))
+  } catch {
+    recommendFavoriteIds.value = new Set()
+  }
+}
+
+const handleRecommendFavoriteToggle = async (product: Product) => {
+  const productId = productIdOf(product)
+  if (!productId) {
+    ElMessage.error('商品数据缺少ID，暂不能收藏')
+    return
+  }
+  markRecommendFavoriteBusy(productId, true)
+  try {
+    if (recommendFavoriteIds.value.has(productId)) {
+      await favoriteApi.cancel(productId)
+      setRecommendFavorite(productId, false)
+      ElMessage.success('已取消收藏')
+    } else {
+      await favoriteApi.collect(productId)
+      setRecommendFavorite(productId, true)
+      ElMessage.success('已收藏')
+    }
+  } catch {
+    ElMessage.error('操作失败，请稍后重试')
+  } finally {
+    markRecommendFavoriteBusy(productId, false)
+  }
+}
+
+const loadReviewSummary = async (productId: number) => {
+  try {
+    reviewSummary.value = await reviewApi.summary(productId)
+  } catch {
+    reviewSummary.value = { avgRating: 0, reviewCount: 0, ratingCount: {} }
+  }
+}
+
+const loadReviews = async (productId: number) => {
+  reviewsLoading.value = true
+  try {
+    const data = await reviewApi.page(productId, reviewQuery)
+    reviews.value = data.records || []
+    reviewTotal.value = data.total || 0
+  } finally {
+    reviewsLoading.value = false
+  }
+}
+
+const loadReviewData = async (productId: number) => {
+  await Promise.all([loadReviewSummary(productId), loadReviews(productId)])
+}
+
+const submitReview = async () => {
+  if (!product.value) return
+  if (!auth.isLogin) {
+    promptReviewLogin()
+    return
+  }
+  const productId = productIdOf(product.value)
+  if (!productId) {
+    ElMessage.error('商品数据缺少ID，暂不能评价')
+    return
+  }
+  if (reviewForm.rating < 1 || reviewForm.rating > 5) {
+    ElMessage.warning('评分必须在1到5之间')
+    return
+  }
+  if (!reviewForm.content.trim()) {
+    ElMessage.warning('评价内容不能为空')
+    return
+  }
+  reviewSubmitting.value = true
+  try {
+    await reviewApi.create(productId, { rating: reviewForm.rating, content: reviewForm.content.trim() })
+    ElMessage.success('评价已提交')
+    reviewForm.rating = 5
+    reviewForm.content = ''
+    reviewQuery.pageNum = 1
+    await loadReviewData(productId)
+  } finally {
+    reviewSubmitting.value = false
+  }
+}
+
+const changeReviewPage = async (page: number) => {
+  if (!product.value) return
+  const productId = productIdOf(product.value)
+  if (!productId) return
+  reviewQuery.pageNum = page
+  await loadReviews(productId)
+}
+
+const formatTime = (value?: string) => {
+  if (!value) return ''
+  return value.replace('T', ' ').slice(0, 16)
+}
+
 const loadRecommendProducts = async (currentId: number) => {
   try {
     const hotProducts = normalizeProducts(await productApi.hot()).filter((item) => item.id && item.id !== currentId)
     if (hotProducts.length) {
       recommendProducts.value = hotProducts.slice(0, 3)
+      await syncRecommendFavoriteStates()
       return
     }
     const page = await productApi.page({ pageNum: 1, pageSize: 6 })
     recommendProducts.value = normalizeProducts(page.records || []).filter((item) => item.id && item.id !== currentId).slice(0, 3)
+    await syncRecommendFavoriteStates()
   } catch {
     recommendProducts.value = []
   }
@@ -332,6 +615,9 @@ const loadProduct = async () => {
     product.value = data
     activeImage.value = getImageUrl(data)
     quantity.value = 1
+    reviewQuery.pageNum = 1
+    await loadFavoriteState(data.id)
+    await loadReviewData(data.id)
     await loadRecommendProducts(data.id)
   } finally {
     loading.value = false
@@ -341,6 +627,8 @@ const loadProduct = async () => {
 watch(stockCount, (stock) => {
   if (stock > 0 && quantity.value > stock) quantity.value = stock
 })
+
+watch(() => auth.token, () => syncRecommendFavoriteStates())
 
 watch(
   () => route.params.id,
@@ -650,7 +938,7 @@ onMounted(loadProduct)
 
 .action-row {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 1fr 1fr 0.82fr;
   gap: 18px;
   margin-top: 22px;
 }
@@ -908,6 +1196,150 @@ onMounted(loadProduct)
   font-size: 13px;
 }
 
+.review-section {
+  display: grid;
+  gap: 18px;
+}
+
+.review-summary {
+  display: grid;
+  grid-template-columns: minmax(220px, 0.7fr) minmax(260px, 1fr);
+  gap: 18px;
+  padding: 18px;
+  border: 1px solid var(--yx-border);
+  border-radius: 14px;
+  background: #fbfef9;
+}
+
+.review-score {
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 8px;
+  min-height: 132px;
+}
+
+.review-score strong {
+  color: #f05a22;
+  font-size: 42px;
+  line-height: 1;
+}
+
+.review-score span {
+  color: #667469;
+  font-size: 13px;
+}
+
+.rating-breakdown {
+  display: grid;
+  gap: 8px;
+  align-content: center;
+}
+
+.rating-breakdown-row {
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr) 36px;
+  gap: 10px;
+  align-items: center;
+  color: #617068;
+  font-size: 13px;
+}
+
+.rating-breakdown-row div {
+  overflow: hidden;
+  height: 8px;
+  border-radius: 999px;
+  background: #edf3ea;
+}
+
+.rating-breakdown-row i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #ffb84d, #f05a22);
+}
+
+.rating-breakdown-row em {
+  color: #8a978e;
+  font-style: normal;
+  text-align: right;
+}
+
+.review-form {
+  display: grid;
+  gap: 12px;
+  padding: 18px;
+  border: 1px solid var(--yx-border);
+  border-radius: 14px;
+  background: #fff;
+}
+
+.review-form h3 {
+  margin: 0;
+  color: #1f2c24;
+  font-size: 17px;
+}
+
+.review-form :deep(.el-textarea__inner) {
+  border-radius: 12px;
+}
+
+.review-form :deep(.el-button) {
+  justify-self: start;
+  border-radius: 10px;
+  font-weight: 800;
+}
+
+.review-login-tip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: #667469;
+}
+
+.review-list {
+  display: grid;
+  gap: 12px;
+  min-height: 140px;
+}
+
+.review-item {
+  display: grid;
+  gap: 10px;
+  padding: 16px;
+  border: 1px solid var(--yx-border);
+  border-radius: 14px;
+  background: #fff;
+}
+
+.review-item-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+
+.review-item-head strong {
+  color: #1f2c24;
+}
+
+.review-item-head span {
+  margin-left: auto;
+  color: #9aa59d;
+  font-size: 13px;
+}
+
+.review-item p {
+  margin: 0;
+  color: #46564b;
+  line-height: 1.8;
+}
+
+.review-empty {
+  min-height: 120px;
+}
+
 .recommend-card {
   padding: 20px;
 }
@@ -1001,6 +1433,7 @@ onMounted(loadProduct)
 
   .action-row,
   .service-grid,
+  .review-summary,
   .spec-list {
     grid-template-columns: 1fr;
   }

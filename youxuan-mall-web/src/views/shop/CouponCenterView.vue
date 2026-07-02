@@ -180,7 +180,7 @@ const todo = (feature: string) => showBackendTodo(feature)
 const accountMenus = [
   { label: '个人中心', icon: User, active: false, action: () => todo('个人中心') },
   { label: '我的订单', icon: Notebook, active: false, action: () => router.push('/orders') },
-  { label: '我的收藏', icon: Star, active: false, action: () => todo('我的收藏') },
+  { label: '我的收藏', icon: Star, active: false, action: () => router.push('/favorites') },
   { label: '收货地址', icon: Location, active: false, action: () => router.push('/addresses') },
   { label: '优惠券', icon: Tickets, active: true, action: () => undefined },
   { label: '我的余额', icon: Wallet, active: false, action: () => todo('我的余额') },

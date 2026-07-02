@@ -38,7 +38,7 @@ import {
 } from '@element-plus/icons-vue'
 
 const props = withDefaults(defineProps<{
-  active?: 'coupons' | 'my-coupons'
+  active?: 'coupons' | 'my-coupons' | 'favorites'
 }>(), {
   active: 'coupons'
 })
@@ -52,7 +52,7 @@ const router = useRouter()
 const menuItems = [
   { label: '个人中心', icon: User, active: false, action: () => emit('todo', '个人中心') },
   { label: '我的订单', icon: Notebook, active: false, action: () => router.push('/orders') },
-  { label: '我的收藏', icon: Star, active: false, action: () => emit('todo', '我的收藏') },
+  { label: '我的收藏', icon: Star, active: props.active === 'favorites', action: () => router.push('/favorites') },
   { label: '收货地址', icon: Location, active: false, action: () => router.push('/addresses') },
   { label: '优惠券', icon: Tickets, active: props.active === 'coupons' || props.active === 'my-coupons', action: () => router.push(props.active === 'my-coupons' ? '/my-coupons' : '/coupons') },
   { label: '我的余额', icon: Wallet, active: false, action: () => emit('todo', '我的余额') },

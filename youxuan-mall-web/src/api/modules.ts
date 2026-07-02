@@ -6,11 +6,14 @@ import type {
   Category,
   Coupon,
   HomeIndex,
+  FavoriteProduct,
   LoginResult,
   Order,
   OrderConfirm,
   PageResult,
   Product,
+  ProductReview,
+  ProductReviewSummary,
   UserCoupon,
   User
 } from '@/types'
@@ -63,6 +66,24 @@ export const cartApi = {
   checkAll: (checked: number) => http.put<unknown, void>('/api/cart/checkAll', { checked }),
   remove: (id: number) => http.delete<unknown, void>(`/api/cart/${id}`),
   removeChecked: () => http.delete<unknown, void>('/api/cart/checked')
+}
+
+export const favoriteApi = {
+  collect: (productId: number) => http.post<unknown, void>(`/api/favorites/${productId}`),
+  cancel: (productId: number) => http.delete<unknown, void>(`/api/favorites/${productId}`),
+  page: (params: { pageNum: number; pageSize: number }) =>
+    http.get<unknown, PageResult<FavoriteProduct>>('/api/favorites/page', { params }),
+  check: (productId: number) => http.get<unknown, boolean>(`/api/favorites/check/${productId}`),
+  checkBatch: (productIds: number[]) =>
+    http.get<unknown, number[]>('/api/favorites/check/batch', { params: { productIds: productIds.join(',') } })
+}
+
+export const reviewApi = {
+  page: (productId: number, params: { pageNum: number; pageSize: number }) =>
+    http.get<unknown, PageResult<ProductReview>>(`/api/product/${productId}/reviews/page`, { params }),
+  summary: (productId: number) => http.get<unknown, ProductReviewSummary>(`/api/product/${productId}/reviews/summary`),
+  create: (productId: number, data: { rating: number; content: string }) =>
+    http.post<unknown, ProductReview>(`/api/product/${productId}/reviews`, data)
 }
 
 export const addressApi = {

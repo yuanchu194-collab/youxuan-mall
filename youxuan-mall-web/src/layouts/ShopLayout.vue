@@ -25,6 +25,7 @@
             <template #dropdown>
               <el-dropdown-menu>
                 <el-dropdown-item @click="$router.push('/addresses')">收货地址</el-dropdown-item>
+                <el-dropdown-item @click="$router.push('/favorites')">我的收藏</el-dropdown-item>
                 <el-dropdown-item @click="$router.push('/my-coupons')">我的优惠券</el-dropdown-item>
                 <el-dropdown-item @click="logout">退出登录</el-dropdown-item>
               </el-dropdown-menu>
@@ -52,7 +53,7 @@ const auth = useAuthStore()
 const keyword = ref('')
 const isHome = computed(() => route.path === '/')
 const isProducts = computed(() => route.path.startsWith('/products'))
-const isCoupons = computed(() => route.path === '/coupons' || route.path === '/my-coupons')
+const isCoupons = computed(() => route.path === '/coupons' || route.path === '/my-coupons' || route.path === '/favorites')
 const isCart = computed(() => route.path === '/cart')
 const isCheckout = computed(() => route.path === '/checkout')
 const isOrders = computed(() => route.path === '/orders' || route.path === '/addresses')

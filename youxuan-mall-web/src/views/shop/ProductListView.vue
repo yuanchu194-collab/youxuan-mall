@@ -117,7 +117,16 @@
         </div>
 
         <div v-if="products.length" class="product-list-grid">
-          <ProductCard v-for="product in products" :key="product.id" :product="product" show-sales @add="addCart" />
+          <ProductCard
+            v-for="product in products"
+            :key="product.id"
+            :product="product"
+            :favorited="favoriteIds.has(product.id)"
+            :favorite-busy="favoriteBusyIds.has(product.id)"
+            show-sales
+            @add="addCart"
+            @favorite-toggle="handleFavoriteToggle"
+          />
         </div>
         <div v-else class="empty-state product-empty">
           <strong>{{ couponFilterError ? '优惠券暂不可用' : '没有找到匹配商品' }}</strong>
@@ -161,7 +170,8 @@ import {
   Ticket
 } from '@element-plus/icons-vue'
 import ProductCard from '@/components/ProductCard.vue'
-import { cartApi, productApi, searchApi } from '@/api/modules'
+import { cartApi, favoriteApi, productApi, searchApi } from '@/api/modules'
+import { useAuthStore } from '@/stores/auth'
 import type { Category, Product } from '@/types'
 import { normalizeProducts, productIdOf } from '@/utils/product'
 
@@ -169,12 +179,15 @@ type SortKey = 'default' | 'sales' | 'price' | 'newest' | 'review'
 
 const route = useRoute()
 const router = useRouter()
+const auth = useAuthStore()
 const categories = ref<Category[]>([])
 const products = ref<Product[]>([])
 const total = ref(0)
 const loading = ref(false)
 const couponFilterError = ref('')
 const syncedCouponId = ref('')
+const favoriteIds = ref(new Set<number>())
+const favoriteBusyIds = ref(new Set<number>())
 const query = reactive({
   keyword: '',
   categoryId: undefined as number | undefined,
@@ -304,11 +317,13 @@ const load = async () => {
         })
     products.value = normalizeProducts(data.records || []).filter((product) => product.id > 0 && product.name)
     total.value = data.total || 0
+    await syncFavoriteStates()
   } catch (error) {
     if (activeCouponId.value) {
       couponFilterError.value = error instanceof Error ? error.message : '优惠券可用商品加载失败'
       products.value = []
       total.value = 0
+      favoriteIds.value = new Set()
       return
     }
     throw error
@@ -364,6 +379,85 @@ const addCart = async (product: Product) => {
   ElMessage.success('已加入购物车')
 }
 
+const ensureLoginForFavorite = () => {
+  if (auth.isLogin) return true
+  ElMessage.warning('请先登录后再收藏商品')
+  router.push({ path: '/login', query: { redirect: route.fullPath } })
+  return false
+}
+
+const markFavoriteBusy = (productId: number, busy: boolean) => {
+  const next = new Set(favoriteBusyIds.value)
+  if (busy) {
+    next.add(productId)
+  } else {
+    next.delete(productId)
+  }
+  favoriteBusyIds.value = next
+}
+
+const setFavorite = (productId: number, favorited: boolean) => {
+  const next = new Set(favoriteIds.value)
+  if (favorited) {
+    next.add(productId)
+  } else {
+    next.delete(productId)
+  }
+  favoriteIds.value = next
+  products.value = products.value.map((item) => {
+    const currentId = productIdOf(item)
+    return currentId === productId ? { ...item, collected: favorited, isFavorite: favorited } : item
+  })
+}
+
+const syncFavoriteStates = async () => {
+  const productIds = products.value.map((product) => productIdOf(product)).filter((id): id is number => Boolean(id))
+  if (!auth.isLogin || !productIds.length) {
+    favoriteIds.value = new Set()
+    products.value = products.value.map((product) => ({ ...product, collected: false, isFavorite: false }))
+    return
+  }
+  try {
+    const collectedProductIds = new Set(await favoriteApi.checkBatch(productIds))
+    favoriteIds.value = collectedProductIds
+    products.value = products.value.map((product) => {
+      const productId = productIdOf(product)
+      const favorited = productId ? collectedProductIds.has(productId) : false
+      return { ...product, collected: favorited, isFavorite: favorited }
+    })
+  } catch {
+    favoriteIds.value = new Set()
+    products.value = products.value.map((product) => ({ ...product, collected: false, isFavorite: false }))
+  }
+}
+
+const handleFavoriteToggle = async (product: Product) => {
+  const productId = productIdOf(product)
+  console.log('[ProductListView] 收到收藏事件', {
+    productId,
+    product
+  })
+  if (!ensureLoginForFavorite()) return
+  if (!productId) {
+    ElMessage.error('商品数据缺少ID，暂不能收藏')
+    return
+  }
+  markFavoriteBusy(productId, true)
+  try {
+    if (favoriteIds.value.has(productId)) {
+      await favoriteApi.cancel(productId)
+      setFavorite(productId, false)
+      ElMessage.success('已取消收藏')
+    } else {
+      await favoriteApi.collect(productId)
+      setFavorite(productId, true)
+      ElMessage.success('已收藏')
+    }
+  } finally {
+    markFavoriteBusy(productId, false)
+  }
+}
+
 watch(
   () => [route.query.keyword, route.query.categoryId, route.query.couponId],
   async () => {
@@ -380,6 +474,11 @@ watch(
 )
 
 watch(activeCouponId, rememberCouponId, { immediate: true })
+
+watch(
+  () => auth.token,
+  () => syncFavoriteStates()
+)
 
 onMounted(async () => {
   syncRoute()

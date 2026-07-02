@@ -15,6 +15,7 @@ const router = createRouter({
         { path: 'products/:id', name: 'product-detail', component: () => import('@/views/shop/ProductDetailView.vue') },
         { path: 'coupons', name: 'coupons', component: () => import('@/views/shop/CouponsView.vue') },
         { path: 'my-coupons', name: 'my-coupons', component: () => import('@/views/shop/MyCouponsModernView.vue'), meta: { auth: true } },
+        { path: 'favorites', name: 'favorites', component: () => import('@/views/shop/FavoritesView.vue'), meta: { auth: true } },
         { path: 'cart', name: 'cart', component: () => import('@/views/shop/CartView.vue'), meta: { auth: true } },
         { path: 'addresses', name: 'addresses', component: () => import('@/views/shop/AddressView.vue'), meta: { auth: true } },
         { path: 'checkout', name: 'checkout', component: () => import('@/views/shop/OrderConfirmView.vue'), meta: { auth: true } },

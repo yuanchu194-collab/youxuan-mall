@@ -65,7 +65,7 @@
               <div class="subtotal">¥{{ money(subtotal(item)) }}</div>
               <div class="item-actions">
                 <button type="button" @click="remove(item)">删除</button>
-                <button type="button" class="hover-action" @click="todo('移入收藏')">移入收藏</button>
+                <button type="button" class="hover-action" @click="moveToFavorite(item)">移入收藏</button>
                 <button type="button" class="hover-action" @click="todo('降价提醒')">降价提醒</button>
                 <button type="button" class="hover-action" @click="todo('相似商品')">相似商品</button>
               </div>
@@ -81,7 +81,7 @@
             </div>
             <div class="toolbar-actions">
               <button type="button" @click="batchDelete">删除选中</button>
-              <button type="button" @click="todo('批量移入收藏')">移入收藏</button>
+              <button type="button" @click="batchMoveToFavorite">移入收藏</button>
               <button type="button" @click="todo('清空购物车')">清空购物车</button>
             </div>
           </div>
@@ -169,7 +169,7 @@ import {
   Wallet
 } from '@element-plus/icons-vue'
 import cartProductDefault from '@/assets/cart-product-default.svg'
-import { cartApi } from '@/api/modules'
+import { cartApi, favoriteApi } from '@/api/modules'
 import type { CartItem } from '@/types'
 import { showBackendTodo } from '@/utils/feature'
 import { normalizeProduct } from '@/utils/product'
@@ -278,6 +278,21 @@ const remove = async (item: CartItem) => {
   await cartApi.remove(id)
   ElMessage.success('已删除购物车商品')
   await load()
+}
+
+const moveToFavorite = async (item: CartItem) => {
+  if (!item.productId) return ElMessage.error('商品ID缺失，无法收藏')
+  await favoriteApi.collect(item.productId)
+  ElMessage.success('已收藏，购物车商品已保留')
+}
+
+const batchMoveToFavorite = async () => {
+  if (!checkedItems.value.length) return ElMessage.warning('请先选择商品')
+  const productIds = Array.from(new Set(checkedItems.value.map((item) => item.productId).filter(Boolean)))
+  for (const productId of productIds) {
+    await favoriteApi.collect(productId)
+  }
+  ElMessage.success('已收藏选中商品，购物车商品已保留')
 }
 
 const batchDelete = async () => {
